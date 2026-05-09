@@ -1,0 +1,26 @@
+# Optional: keep the Streamlit Community Cloud app warm via GitHub Actions.
+#
+# 1. Replace APP_URL below with your deployed app URL once it's live.
+# 2. Commit + push. Actions will run every 8 minutes, hitting the URL.
+# 3. The container stays warm and wake-up time stays sub-1-second.
+#
+# Cost: free for public repos. Action minutes used: ~5 minutes/month.
+
+name: Keep Streamlit app warm
+
+on:
+  schedule:
+    - cron: "*/8 * * * *"   # every 8 minutes
+  workflow_dispatch: {}      # manual trigger from the Actions tab
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping the deployed app
+        env:
+          APP_URL: https://your-app-name.streamlit.app   # ← change me
+        run: |
+          curl -sSf -o /dev/null --max-time 30 "$APP_URL" \
+            && echo "✓ pinged $APP_URL" \
+            || echo "ping failed (app may be cold-starting)"

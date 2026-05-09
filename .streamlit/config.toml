@@ -1,0 +1,21 @@
+[theme]
+# Modern Minimal palette — mirrors the HTML preview
+primaryColor = "#0F766E"
+backgroundColor = "#FAFAF9"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#111827"
+font = "sans serif"
+
+[server]
+headless = true
+runOnSave = false
+fileWatcherType = "none"   # less file-system polling = faster cold start
+
+[browser]
+gatherUsageStats = false
+
+[client]
+showSidebarNavigation = false
+
+[logger]
+level = "warning"
