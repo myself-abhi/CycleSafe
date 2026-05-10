@@ -178,72 +178,75 @@ def inject_css() -> None:
         transition: background 220ms ease, border-color 220ms ease, color 220ms ease;
       }}
 
-      /* ============== PILLAR 2: TOTAL VIEWPORT HIJACK (≥ 901px) ============== */
-      /* Strategy: skip the flex chain entirely. Each panel row gets an
-         EXPLICIT calc() height directly. The math: half of (100vh minus
-         brand + filter + paddings). No reliance on parent flex inheritance,
-         no :has() — just hard-coded geometry the browser can't escape. */
+      /* ============== PILLAR 2: ABSOLUTE POSITIONING — NO MORE GUESSING ============== */
+      /* Flex chains have failed because Streamlit's wrapper structure on
+         Streamlit Cloud doesn't match what my selectors target. Switching
+         to position: absolute. Panel rows lock to fixed viewport regions
+         regardless of any sibling/wrapper margins. The empty space cannot
+         exist because each panel row is anchored to specific top/bottom
+         coordinates.
+
+         Layout map (vertical):
+           0 ─────────── 130px    brand + filter (natural flow)
+           130px ────── 50vh     panel row 1 (top half)
+           50vh ─────── 100vh-10  panel row 2 (bottom half)
+      */
       @media (min-width: 901px) {{
 
-        /* Step 1: Block-container is a flex column — children stack vertically. */
+        /* Establish the positioning context */
         body .stApp .stMainBlockContainer,
         body .stApp .block-container {{
-          display: flex !important;
-          flex-direction: column !important;
+          position: relative !important;
         }}
-
-        /* Step 2: Top-level vertical block fills the container 100%. */
         body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"],
         body .stApp .block-container > [data-testid="stVerticalBlock"] {{
+          position: relative !important;
           height: 100% !important;
-          flex: 1 1 auto !important;
-          min-height: 0 !important;
-          display: flex !important;
-          flex-direction: column !important;
-          gap: 0.4rem !important;
         }}
 
-        /* Step 3: Universal child selector. Targets every direct child of
-           the top vertical block, regardless of what wrapper Streamlit uses. */
-
-        /* Brand (1st) and filter (2nd) stay at natural compact size. */
-        body .stApp .block-container > [data-testid="stVerticalBlock"] > *:nth-child(1),
-        body .stApp .block-container > [data-testid="stVerticalBlock"] > *:nth-child(2),
-        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > *:nth-child(1),
-        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > *:nth-child(2) {{
-          flex: 0 0 auto !important;
-          margin: 0 !important;
-          padding: 0 !important;
-        }}
-
-        /* Panel rows (3rd & 4th children) — EXPLICIT HEIGHT via calc().
-           140px = brand (~50) + filter (~75) + paddings (~15). */
+        /* Panel ROW 1 (3rd direct child) — locked to 130px → 50vh.
+           position: absolute pulls it out of normal flow, so sibling
+           margins/padding can't push it down. */
         body .stApp .block-container > [data-testid="stVerticalBlock"] > *:nth-child(3),
-        body .stApp .block-container > [data-testid="stVerticalBlock"] > *:nth-child(4),
-        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > *:nth-child(3),
-        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > *:nth-child(4) {{
-          height: calc((100vh - 140px) / 2) !important;
-          min-height: calc((100vh - 140px) / 2) !important;
-          max-height: calc((100vh - 140px) / 2) !important;
-          flex: 0 0 calc((100vh - 140px) / 2) !important;
+        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > *:nth-child(3) {{
+          position: absolute !important;
+          top: 130px !important;
+          bottom: calc(50vh + 4px) !important;
+          left: 0 !important;
+          right: 0 !important;
           margin: 0 !important;
           padding: 0 !important;
           display: flex !important;
           overflow: hidden !important;
         }}
 
-        /* Step 4: stHorizontalBlock inside the panel-row wrappers fills 100%. */
+        /* Panel ROW 2 (4th direct child) — locked to 50vh → 100vh-10. */
+        body .stApp .block-container > [data-testid="stVerticalBlock"] > *:nth-child(4),
+        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > *:nth-child(4) {{
+          position: absolute !important;
+          top: calc(50vh + 4px) !important;
+          bottom: 10px !important;
+          left: 0 !important;
+          right: 0 !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          display: flex !important;
+          overflow: hidden !important;
+        }}
+
+        /* The stHorizontalBlock inside each panel row fills it 100%. */
         body .stApp .block-container > [data-testid="stVerticalBlock"] > *:nth-child(n+3) [data-testid="stHorizontalBlock"],
         body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > *:nth-child(n+3) [data-testid="stHorizontalBlock"] {{
           height: 100% !important;
           width: 100% !important;
           flex: 1 1 auto !important;
           min-height: 0 !important;
+          margin: 0 !important;
           align-items: stretch !important;
           flex-wrap: nowrap !important;
         }}
 
-        /* Step 5: Columns inside panel rows take 100% height. */
+        /* Columns inside panel rows fill height. */
         body .stApp .block-container > [data-testid="stVerticalBlock"] > *:nth-child(n+3) [data-testid="column"],
         body .stApp .block-container > [data-testid="stVerticalBlock"] > *:nth-child(n+3) [data-testid="stColumn"],
         body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > *:nth-child(n+3) [data-testid="column"],
@@ -254,7 +257,7 @@ def inject_css() -> None:
           flex-direction: column !important;
         }}
 
-        /* Step 6: stVerticalBlocks inside columns fill 100%. */
+        /* Inner stVerticalBlock fills its column. */
         body .stApp .block-container > [data-testid="stVerticalBlock"] > *:nth-child(n+3) [data-testid="column"] [data-testid="stVerticalBlock"],
         body .stApp .block-container > [data-testid="stVerticalBlock"] > *:nth-child(n+3) [data-testid="stColumn"] [data-testid="stVerticalBlock"],
         body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > *:nth-child(n+3) [data-testid="column"] [data-testid="stVerticalBlock"],
@@ -266,7 +269,7 @@ def inject_css() -> None:
           flex-direction: column !important;
         }}
 
-        /* Step 7: The bordered panel itself fills its column. */
+        /* The bordered panel surface fills its parent column. */
         body .stApp [data-testid="stVerticalBlockBorderWrapper"] {{
           height: 100% !important;
           min-height: 0 !important;
@@ -286,7 +289,7 @@ def inject_css() -> None:
           overflow: hidden !important;
         }}
 
-        /* Step 8: Charts grow to fill remaining space inside the panel. */
+        /* Charts fill the panel's vertical space below the section header. */
         body .stApp [data-testid="stAltairChart"] {{
           flex: 1 1 auto !important;
           min-height: 0 !important;
