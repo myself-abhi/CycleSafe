@@ -170,10 +170,25 @@ st.markdown(
   }}
   .acs-insight .h {{ font-size: 0.95rem; font-weight: 600; color: {FG}; line-height: 1.3; }}
 
-  /* Streamlit chrome trims */
+  /* Streamlit chrome — hide everything that breaks the "exact replica" feel */
   #MainMenu {{ visibility: hidden; }}
   footer {{ visibility: hidden; }}
-  header[data-testid="stHeader"] {{ background: transparent; }}
+  header[data-testid="stHeader"] {{ display: none; height: 0; }}
+  div[data-testid="stToolbar"] {{ display: none !important; }}
+  div[data-testid="stDecoration"] {{ display: none !important; }}
+  div[data-testid="stStatusWidget"] {{ display: none !important; }}
+  .stDeployButton, .stAppDeployButton {{ display: none !important; }}
+  /* the floating "streamlitApp" page-name badge */
+  [data-testid="stSidebarNav"] {{ display: none !important; }}
+  [data-testid="stSidebarNavItems"] {{ display: none !important; }}
+  ul[data-testid="stSidebarNavItems"] {{ display: none !important; }}
+  div[data-testid="stSidebarNav"] {{ display: none !important; }}
+  /* legacy and current selectors for the top-left page-name pill */
+  .stApp > header {{ display: none !important; }}
+  .viewerBadge_container__1QSob {{ display: none !important; }}
+  ._terminalButton_rix23_138 {{ display: none !important; }}
+  /* Tighten outer padding so the layout breathes like the HTML preview */
+  .block-container {{ padding-top: 0.6rem !important; padding-left: 1.2rem !important; padding-right: 1.2rem !important; }}
 
   /* Tabs styling */
   .stTabs [role="tablist"] {{ gap: 0; border-bottom: 1px solid {BORDER}; }}
@@ -189,6 +204,37 @@ st.markdown(
     font-weight: 600; border-radius: 6px;
   }}
   .stButton > button:hover {{ background: {PRIMARY_HOVER}; border-color: {PRIMARY_HOVER}; }}
+
+  /* Numbered accordion (mirrors HTML <details class="acc-panel">) */
+  div[data-testid="stExpander"] {{
+    border: 1px solid {BORDER}; border-radius: 8px; background: {SURFACE};
+    margin-top: 0.55rem;
+    overflow: hidden;
+  }}
+  div[data-testid="stExpander"] summary {{
+    padding: 0.55rem 0.85rem !important;
+    font-weight: 600 !important;
+    color: {FG} !important;
+    background: #FAFAFA;
+  }}
+  div[data-testid="stExpander"] summary p {{ margin: 0; font-size: 0.85rem; }}
+
+  /* Hero "Plain-language verdict" card — top of Plan sidebar */
+  .acs-plan-kicker {{
+    color: rgba(255,255,255,0.85); text-transform: uppercase;
+    letter-spacing: 0.10em; font-size: 0.7rem; font-weight: 600;
+  }}
+  .acs-divider-row {{
+    border-top: 1px solid rgba(240,249,255,0.18);
+    margin-top: 0.85rem; padding-top: 0.7rem;
+  }}
+  .acs-distance-num {{
+    font-size: 1.35rem; font-weight: 600; color: white;
+    letter-spacing: -0.01em; margin-top: 0.2rem;
+  }}
+  .acs-mini-help {{
+    font-size: 0.78rem; color: {FG_MUTED}; line-height: 1.5;
+  }}
 </style>
 """,
     unsafe_allow_html=True,
@@ -637,98 +683,142 @@ def _route_distance_meters(geojson_feature: dict | None) -> float:
 
 with tab_plan:
     st.markdown('<p class="acs-kicker">Plan your ride</p>', unsafe_allow_html=True)
+
+    # Form-state defaults — initialised once so the verdict can render at the
+    # top of the sidebar BEFORE the form expander below it (mirrors HTML).
+    _form_defaults = {
+        "f_day": "Friday",
+        "f_tb": "Evening Rush (3–7 PM)",
+        "f_sb": "Neighborhood arterial (26–35 mph)",
+        "f_loc": "At or near an intersection",
+        "f_sf": "Dry",
+        "f_helmet": "Yes",
+    }
+    for _k, _v in _form_defaults.items():
+        if _k not in st.session_state:
+            st.session_state[_k] = _v
+
     sidebar, mapcol = st.columns([1, 2])
 
-    # ---------- Sidebar — conditions form + verdict ----------
+    # =========================================================
+    # Sidebar — verdict ABOVE form, then numbered accordion sections
+    # =========================================================
     with sidebar:
-        col_a, col_b = st.columns(2)
-        with col_a:
-            day = st.selectbox("Day", ["Monday", "Tuesday", "Wednesday", "Thursday",
-                                       "Friday", "Saturday", "Sunday"], index=4)
-        with col_b:
-            tb = st.selectbox("Time band", [
-                "Morning Rush (6–10 AM)", "Midday (10 AM–3 PM)", "Evening Rush (3–7 PM)",
-                "Night (7 PM–12 AM)", "Late Night (12–6 AM)",
-            ], index=2)
-        sb = st.selectbox("Street type", [
-            "Calm street (≤25 mph)", "Neighborhood arterial (26–35 mph)",
-            "Major arterial (36–45 mph)", "High-speed road (46+ mph)",
-        ], index=1)
-        loc = st.selectbox("Location on road", [
-            "At or near an intersection", "Mid-block (no intersection)",
-            "Driveway / parking access",
-        ], index=0)
-        col_c, col_d = st.columns(2)
-        with col_c:
-            sf = st.selectbox("Surface", ["Dry", "Wet", "Other / Unknown"], index=0)
-        with col_d:
-            helmet = st.selectbox("Helmet", ["Yes", "No"], index=0)
-
-        risk = compute_risk(tb, sb, loc, sf, helmet)
+        # Compute risk from CURRENT session-state values
+        risk = compute_risk(
+            st.session_state.f_tb, st.session_state.f_sb, st.session_state.f_loc,
+            st.session_state.f_sf, st.session_state.f_helmet,
+        )
         st.session_state.current_risk = risk
+        agg = crash_aggregates()
+        meters = _route_distance_meters(st.session_state.drawn_route)
+        miles = meters / 1609.344
+        km = meters / 1000.0
 
-        # Hero card
         verdict_map = {
-            "calm": ("go", "GOOD TIME TO RIDE", "calm"),
-            "caution": ("caution", "RIDE WITH CAUTION", "warn"),
-            "danger": ("stop", "WAIT IF YOU CAN", "bad"),
+            "calm":    ("go",      "GOOD TIME TO RIDE",   "calm"),
+            "caution": ("caution", "RIDE WITH CAUTION",   "warn"),
+            "danger":  ("stop",    "WAIT IF YOU CAN",     "bad"),
         }
         v_class, v_text, num_class = verdict_map.get(risk["band"], ("guard", "READING DATA", ""))
-        delta = (risk["rate"] - crash_aggregates()["baseline"]) * 100
+        delta = (risk["rate"] - agg["baseline"]) * 100
         delta_color = DANGER if delta >= 0 else SUCCESS
+
+        # ---- (1) Hero risk card — verdict + number + distance row ----
         st.markdown(
             f"""
-            <div class="acs-hero" style="margin-top: 8px;">
-              <span class="verdict {v_class}">● {v_text}</span>
+            <div class="acs-hero">
+              <div class="acs-plan-kicker">Plain-language verdict</div>
+              <span class="verdict {v_class}" style="margin: 6px 0;">● {v_text}</span>
               <div class="num {num_class}">{risk['rate']*100:.1f}%</div>
               <div class="band">{risk['band_label'].upper()}</div>
               <div class="sub">
                 Of <b>{risk['n']:,}</b> matching crashes, <b>{risk['serious']}</b> were serious
-                ({risk['killed']} fatal). Baseline: {crash_aggregates()['baseline']*100:.2f}%.
+                ({risk['killed']} fatal). Baseline: {agg['baseline']*100:.2f}%.
                 You sit <b style="color: {delta_color};">{'+' if delta>=0 else ''}{delta:.1f} pts</b>
-                from baseline ({risk['rate']/crash_aggregates()['baseline']:.2f}×).
+                from baseline ({risk['rate']/agg['baseline']:.2f}×).
+              </div>
+              <div class="acs-divider-row">
+                <div class="acs-plan-kicker">Route distance</div>
+                <div class="acs-distance-num">{miles:.2f} mi</div>
+                <div style="font-size: 0.78rem; color: rgba(255,255,255,0.7);">
+                  {km:.2f} km · {len((st.session_state.drawn_route or {}).get('geometry', {}).get('coordinates', []))} route points
+                </div>
               </div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-        # Recommendation banner
+        # ---- (2) Recommendation banner ----
         rec_class = "guard" if risk["used_fallback"] and risk["level"].startswith("baseline") else risk["band"]
         if risk["band"] == "calm":
             rec_title = "Comparatively safer window"
-            rec_body = (f"These conditions sit at or below the {crash_aggregates()['baseline']*100:.2f}% baseline. "
+            rec_body = (f"These conditions sit at or below the {agg['baseline']*100:.2f}% baseline. "
                         f"Helmet on, lights on, stay visible — \"safer\" isn't \"safe\".")
         elif risk["band"] == "caution":
             rec_title = "Above baseline — ride with caution"
-            rec_body = (f"Risk is elevated ({risk['rate']*100:.1f}% vs {crash_aggregates()['baseline']*100:.2f}%). "
+            rec_body = (f"Risk is elevated ({risk['rate']*100:.1f}% vs {agg['baseline']*100:.2f}%). "
                         f"Watch for right-hooks, signal turns, assume drivers don't see you.")
         else:
             rec_title = "Well above baseline — reconsider"
-            ratio = risk["rate"] / crash_aggregates()["baseline"]
+            ratio = risk["rate"] / agg["baseline"]
             rec_body = (f"These conditions historically put cyclists in the hospital "
                         f"{ratio:.1f}× as often as the city average. "
                         f"Shift to a calmer street, earlier time, or dry surface if you can.")
-        if helmet == "No" and risk["band"] != "calm":
+        if st.session_state.f_helmet == "No" and risk["band"] != "calm":
             rec_body += "  Helmets correlate with a 5.6% serious-injury rate vs 10.6% unhelmeted."
-
         st.markdown(
             f'<div class="acs-rec {rec_class}"><h4>{rec_title}</h4><p>{rec_body}</p></div>',
             unsafe_allow_html=True,
         )
 
-        # Drivers — show each input's marginal rate
-        with st.expander("Why the dial moved", expanded=False):
-            agg = crash_aggregates()
+        # =====================================================
+        # Numbered accordion sections — match the HTML preview
+        # =====================================================
+
+        # ---- 01 · Conditions (open) ----
+        with st.expander("01 · Conditions", expanded=True):
+            ca, cb = st.columns(2)
+            with ca:
+                st.selectbox("Day",
+                    ["Monday", "Tuesday", "Wednesday", "Thursday",
+                     "Friday", "Saturday", "Sunday"], key="f_day")
+            with cb:
+                st.selectbox("Time band", [
+                    "Morning Rush (6–10 AM)", "Midday (10 AM–3 PM)", "Evening Rush (3–7 PM)",
+                    "Night (7 PM–12 AM)", "Late Night (12–6 AM)",
+                ], key="f_tb")
+            st.selectbox("Street type", [
+                "Calm street (≤25 mph)", "Neighborhood arterial (26–35 mph)",
+                "Major arterial (36–45 mph)", "High-speed road (46+ mph)",
+            ], key="f_sb")
+            st.selectbox("Location on road", [
+                "At or near an intersection", "Mid-block (no intersection)",
+                "Driveway / parking access",
+            ], key="f_loc")
+            cc, cd = st.columns(2)
+            with cc:
+                st.selectbox("Surface", ["Dry", "Wet", "Other / Unknown"], key="f_sf")
+            with cd:
+                st.selectbox("Helmet", ["Yes", "No"], key="f_helmet")
+
+        # ---- 02 · Why the dial moved (collapsed) ----
+        with st.expander("02 · Why the dial moved", expanded=False):
             def _rate_for(pat, label):
                 hit = next((p for p in pat if p["label"] == label), None)
                 return (hit["rate"], hit["n"]) if hit else (0, 0)
             rows = [
-                ("When you ride", tb, *_rate_for(agg["time_pattern"], tb)),
-                ("Street type", sb, *_rate_for(agg["speed_pattern"], sb)),
-                ("Location",    loc, *_rate_for(agg["location_pattern"], loc)),
-                ("Surface", sf if sf in ("Dry", "Wet") else "—",
-                 *(_rate_for(agg["surface_pattern"], sf) if sf in ("Dry", "Wet") else (agg["baseline"], 0))),
+                ("When you ride", st.session_state.f_tb,
+                 *_rate_for(agg["time_pattern"],     st.session_state.f_tb)),
+                ("Street type",   st.session_state.f_sb,
+                 *_rate_for(agg["speed_pattern"],    st.session_state.f_sb)),
+                ("Location",      st.session_state.f_loc,
+                 *_rate_for(agg["location_pattern"], st.session_state.f_loc)),
+                ("Surface",
+                 st.session_state.f_sf if st.session_state.f_sf in ("Dry", "Wet") else "—",
+                 *(_rate_for(agg["surface_pattern"], st.session_state.f_sf)
+                   if st.session_state.f_sf in ("Dry", "Wet") else (agg["baseline"], 0))),
             ]
             for name, val, rate, n in rows:
                 color = DANGER if rate > agg["baseline"] else SUCCESS
@@ -739,9 +829,111 @@ with tab_plan:
                     unsafe_allow_html=True,
                 )
 
-    # ---------- Map column ----------
+        # ---- 03 · Map & drawing (open) — explanation + how-snap-affects-risk ----
+        with st.expander("03 · Map & drawing", expanded=True):
+            st.markdown(
+                f"""
+                <div class="acs-mini-help">
+                  <b style="color: {PRIMARY_HOVER};">Freehand drawing.</b>
+                  What you draw is the route. Distance is measured along the exact line
+                  you put on the map — no auto-correct, no surprises. Use the map's
+                  toolbar (top-left) to start a polyline.<br><br>
+                  The <b>Street type</b> setting in 01 Conditions is what drives the
+                  risk calculation. Pick the road class that matches what you're drawing
+                  along — calm street, arterial, or high-speed road.
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                f"""
+                <div class="acs-rec calm" style="margin-top: 0.6rem; padding: 0.6rem 0.8rem;">
+                  <h4 style="font-size: 0.7rem;">How the snap affects your risk score</h4>
+                  <p style="font-size: 0.78rem; line-height: 1.5;">
+                    Calm 25 mph residentials run a ~7% serious-injury rate; 46+ mph arterials
+                    run ~19%. Draw along the streets you actually plan to ride, then make sure
+                    your <b>Street type</b> setting matches that road class — that's how the
+                    verdict gets right.
+                  </p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        # ---- 04 · Street search & AI route (collapsed, informational stub) ----
+        with st.expander("04 · Street search & AI route", expanded=False):
+            st.text_input("Search a street or landmark",
+                          placeholder='e.g. "Congress Ave" or "Zilker Park"',
+                          disabled=True, key="f_search")
+            sa, sb_btn = st.columns(2)
+            with sa:
+                st.button("+ Add waypoint", disabled=True, use_container_width=True)
+            with sb_btn:
+                st.button("🤖 AI route", disabled=True, use_container_width=True)
+            st.caption("Snap-to-road is intentionally off in this build — see section 03.")
+
+        # ---- 05 · Pace & calories (collapsed) ----
+        with st.expander("05 · Pace & calories", expanded=False):
+            pa, pb = st.columns(2)
+            with pa:
+                pace = st.number_input("Pace (min/mi)", min_value=4.0, max_value=20.0,
+                                       value=9.0, step=0.5, key="f_pace")
+            with pb:
+                weight = st.number_input("Weight (lb)", min_value=70, max_value=350,
+                                         value=160, step=5, key="f_weight")
+            tot_min = pace * miles
+            kcal = int(round(0.49 * weight * (tot_min / 60.0) * 10))  # ~10 MET cycling
+            mm, ss = int(tot_min), int(round((tot_min - int(tot_min)) * 60))
+            ra, rb = st.columns(2)
+            with ra:
+                st.markdown(
+                    f"<div class='acs-kpi'><div class='label'>Time</div>"
+                    f"<div class='num' style='font-size:1.3rem;'>{mm}:{ss:02d}</div></div>",
+                    unsafe_allow_html=True)
+            with rb:
+                st.markdown(
+                    f"<div class='acs-kpi'><div class='label'>Calories</div>"
+                    f"<div class='num' style='font-size:1.3rem;'>{kcal:,}</div></div>",
+                    unsafe_allow_html=True)
+
+        # ---- 06 · Save & export (open) ----
+        with st.expander("06 · Save & export", expanded=True):
+            sv, ex = st.columns(2)
+            with sv:
+                if st.button("💾 Save ride", use_container_width=True,
+                             disabled=meters < 1, key="btn_save_ride"):
+                    if st.session_state.drawn_route:
+                        st.session_state.saved_rides.append({
+                            "name": f"Ride {len(st.session_state.saved_rides)+1}",
+                            "geojson": st.session_state.drawn_route,
+                            "distance_m": meters,
+                            "risk": st.session_state.current_risk,
+                        })
+                        st.success(f"Saved ride #{len(st.session_state.saved_rides)}")
+            with ex:
+                export = {
+                    "schema": "cyclesafe.streamlit.v1",
+                    "current_route": st.session_state.drawn_route,
+                    "current_risk": st.session_state.current_risk,
+                    "saved_rides": st.session_state.saved_rides,
+                }
+                st.download_button(
+                    "⬇ Export JSON",
+                    data=json.dumps(export, indent=2, default=str),
+                    file_name="cyclesafe_export.json",
+                    mime="application/json",
+                    use_container_width=True,
+                    key="btn_export_json",
+                )
+            if st.button("⨯ Clear current route", use_container_width=True,
+                         key="btn_clear_route"):
+                st.session_state.drawn_route = None
+                st.rerun()
+
+    # =========================================================
+    # Map column — fills the right 2/3 of the viewport
+    # =========================================================
     with mapcol:
-        # Lazy import folium so cold-start time stays low when user only views Home tab
         import folium
         from folium.plugins import Draw
         from streamlit_folium import st_folium
@@ -760,7 +952,6 @@ with tab_plan:
             },
             edit_options={"edit": True, "remove": True},
         ).add_to(m)
-        # If we already have a drawn route in session, render it back so it survives reruns
         if st.session_state.drawn_route:
             geom = st.session_state.drawn_route.get("geometry", {})
             if geom.get("type") == "LineString":
@@ -768,54 +959,14 @@ with tab_plan:
                     [[c[1], c[0]] for c in geom["coordinates"]],
                     color=PRIMARY, weight=5, opacity=0.95,
                 ).add_to(m)
-        out = st_folium(m, height=520, width=None, returned_objects=["last_active_drawing"],
-                        key="plan_map")
+        out = st_folium(m, height=720, width=None,
+                        returned_objects=["last_active_drawing"], key="plan_map")
         if out and out.get("last_active_drawing"):
-            st.session_state.drawn_route = out["last_active_drawing"]
-
-        # Distance + actions row
-        meters = _route_distance_meters(st.session_state.drawn_route)
-        miles = meters / 1609.344
-        km = meters / 1000.0
-        info_cols = st.columns([2, 1, 1, 1])
-        with info_cols[0]:
-            st.markdown(
-                f"<div style='padding: 8px 12px; background: {SURFACE}; border: 1px solid {BORDER}; border-radius: 6px;'>"
-                f"<span style='color: {FG_MUTED}; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.1em;'>"
-                f"Route distance</span><br>"
-                f"<span style='font-size: 1.4rem; font-weight: 600; color: {FG};'>{miles:.2f} mi</span>"
-                f" <span style='color: {FG_MUTED}; font-size: 0.85rem;'>({km:.2f} km)</span>"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
-        with info_cols[1]:
-            if st.button("💾 Save ride", use_container_width=True, disabled=meters < 1):
-                if st.session_state.drawn_route:
-                    st.session_state.saved_rides.append({
-                        "name": f"Ride {len(st.session_state.saved_rides)+1}",
-                        "geojson": st.session_state.drawn_route,
-                        "distance_m": meters,
-                        "risk": st.session_state.current_risk,
-                    })
-                    st.success(f"Saved ride #{len(st.session_state.saved_rides)}")
-        with info_cols[2]:
-            if st.button("⨯ Clear", use_container_width=True):
-                st.session_state.drawn_route = None
+            new_route = out["last_active_drawing"]
+            # Only update + rerun when the route actually changed, to avoid loops
+            if new_route != st.session_state.drawn_route:
+                st.session_state.drawn_route = new_route
                 st.rerun()
-        with info_cols[3]:
-            export = {
-                "schema": "cyclesafe.streamlit.v1",
-                "current_route": st.session_state.drawn_route,
-                "current_risk": st.session_state.current_risk,
-                "saved_rides": st.session_state.saved_rides,
-            }
-            st.download_button(
-                "⬇ Export JSON",
-                data=json.dumps(export, indent=2, default=str),
-                file_name=f"cyclesafe_export.json",
-                mime="application/json",
-                use_container_width=True,
-            )
 
 
 # ============================================================
