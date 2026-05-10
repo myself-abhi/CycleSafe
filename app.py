@@ -285,16 +285,16 @@ st.markdown(
   }}
   /* Wrap every Plotly chart in a clean white card. Target the OUTER container
      so the chart's title sits inside the card instead of overflowing above it.
-     IMPORTANT: no overflow:hidden — that was clipping the x-axis labels. */
+     IMPORTANT: no overflow:hidden — that was clipping the x-axis labels.
+     All four cards locked to the same height so the 2x2 grid is uniform. */
   div[data-testid="stPlotlyChart"] {{
     background: {SURFACE};
     border: 1px solid {BORDER};
     border-radius: 10px;
-    padding: 8px 8px 4px 8px;
+    padding: 6px 8px 4px 8px;
     box-shadow: 0 1px 2px rgba(17,24,39,0.04), 0 1px 4px rgba(17,24,39,0.03);
     margin-bottom: 10px;
-    min-height: 290px;
-    height: 290px;
+    height: 320px;
     box-sizing: border-box;
   }}
   /* Reset the inner wrapper so styles don't double-apply */
@@ -602,8 +602,8 @@ def _baseline_shape(baseline_pct: float, x0=0, x1=1, axis="y"):
     )
 
 
-def _chart_layout(title: str, height: int = 270) -> dict:
-    """Uniform chart layout. Generous margins so axis labels never clip."""
+def _chart_layout(title: str, height: int = 300) -> dict:
+    """Uniform chart layout. Card is 320px, chart 300px → all 4 same size."""
     return dict(
         title=dict(text=title, font=dict(size=13, color=FG, family="Inter"),
                    x=0, xanchor="left", y=0.97, yanchor="top"),
@@ -611,13 +611,15 @@ def _chart_layout(title: str, height: int = 270) -> dict:
         # always render fully inside the chart bounds.
         margin=dict(l=46, r=22, t=42, b=48),
         paper_bgcolor=SURFACE, plot_bgcolor=SURFACE,
-        height=height, showlegend=False,
+        height=height, autosize=False, showlegend=False,
         font=dict(family="Inter", size=10, color=FG_MUTED),
         hoverlabel=dict(bgcolor=FG, font=dict(color="white", family="Inter")),
     )
 
 
-@st.cache_data(show_spinner=False)
+# NOTE: @st.cache_data was removed from these chart functions because the
+# cache key doesn't include color constants — when SUCCESS/DANGER change,
+# cached figures retain the old colors. The build cost is negligible (~5ms).
 def chart_time_of_day():
     D = crash_aggregates()
     pat = D["time_pattern"]
@@ -638,7 +640,6 @@ def chart_time_of_day():
     return fig
 
 
-@st.cache_data(show_spinner=False)
 def chart_speed():
     D = crash_aggregates()
     pat = D["speed_pattern"]
@@ -657,7 +658,6 @@ def chart_speed():
     return fig
 
 
-@st.cache_data(show_spinner=False)
 def chart_year():
     D = crash_aggregates()
     yrs = D["year_trend"]
@@ -678,7 +678,6 @@ def chart_year():
     return fig
 
 
-@st.cache_data(show_spinner=False)
 def chart_severity():
     D = crash_aggregates()
     total, killed = D["total"], D["killed"]
