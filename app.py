@@ -65,31 +65,34 @@ def inject_css() -> None:
       [data-testid="stStatusWidget"] {{ display: none !important; }}
       .stDeployButton {{ display: none !important; }}
 
-      /* ============== PAGE SURFACE — always light, fills viewport ============== */
-      html, body, .stApp {{
+      /* ============== PAGE SURFACE — fills viewport, no scroll ============== */
+      html, body {{
+        height: 100%;
+        margin: 0;
+        background: {PAGE_BG};
+      }}
+      .stApp {{
         background: {PAGE_BG} !important;
         color: {CHARCOAL};
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        height: 100vh;
-        overflow: hidden;
+        height: 100vh !important;
+        overflow: hidden !important;
       }}
-      .block-container {{
-        padding: clamp(0.5rem, 1.2vw, 0.9rem) clamp(0.75rem, 2vw, 1.75rem) 0.75rem !important;
+      [data-testid="stAppViewContainer"] {{
+        height: 100vh !important;
+        overflow: hidden !important;
+      }}
+      [data-testid="stMain"], section[data-testid="stMain"] {{
+        height: 100vh !important;
+        overflow: hidden !important;
+      }}
+      .stMainBlockContainer, .block-container {{
+        padding: clamp(0.5rem, 1.2vw, 0.85rem) clamp(0.75rem, 2vw, 1.75rem) 0.65rem !important;
         max-width: 1600px !important;
         margin: 0 auto !important;
         height: 100vh !important;
         max-height: 100vh !important;
-        display: flex !important;
-        flex-direction: column !important;
         overflow: hidden !important;
-      }}
-      /* Streamlit's outermost vertical block stretches to fill the container */
-      .block-container > [data-testid="stVerticalBlock"] {{
-        flex: 1 1 auto;
-        display: flex;
-        flex-direction: column;
-        min-height: 0;
-        gap: 0.55rem !important;
       }}
 
       /* ============== BRAND BAR ============== */
@@ -160,84 +163,65 @@ def inject_css() -> None:
         transition: background 220ms ease, border-color 220ms ease, color 220ms ease;
       }}
 
-      /* ============== EQUAL-HEIGHT 4-PANEL GRID (≥ 901px) ============== */
-      /* Two panel rows split remaining space evenly. Each panel fills
-         its column. If content overflows, the panel scrolls internally
-         so the grid still fits the page. */
+      /* ============== EQUAL-HEIGHT 4-PANEL LAYOUT (≥ 901px) ============== */
+      /* Each panel gets an explicit height: half of the viewport minus
+         the brand bar + filter strip + paddings. This sidesteps the
+         fragile flex chain through Streamlit's nested wrappers. */
       @media (min-width: 901px) {{
-        /* Filter row stays compact */
-        [data-testid="stHorizontalBlock"]:not(:has([data-testid="stVerticalBlockBorderWrapper"])) {{
-          flex: 0 0 auto !important;
+        :root {{
+          --brand-h:  52px;
+          --filter-h: 76px;
+          --gaps:     34px;   /* paddings, row gap, breathing room */
+          --panel-h:  calc((100vh - var(--brand-h) - var(--filter-h) - var(--gaps)) / 2);
         }}
 
-        /* Each panel row gets an equal share of the leftover vertical space */
-        [data-testid="stHorizontalBlock"]:has([data-testid="stVerticalBlockBorderWrapper"]) {{
-          flex: 1 1 0 !important;
-          min-height: 0 !important;
-          margin-bottom: 0 !important;
-          align-items: stretch !important;
-        }}
-
-        /* Columns inside a panel row stretch full height */
-        [data-testid="stHorizontalBlock"]:has([data-testid="stVerticalBlockBorderWrapper"])
-          > [data-testid="column"],
-        [data-testid="stHorizontalBlock"]:has([data-testid="stVerticalBlockBorderWrapper"])
-          > [data-testid="stColumn"] {{
-          display: flex !important;
-          flex-direction: column !important;
-          min-height: 0 !important;
-        }}
-
-        /* Vertical block inside each column also stretches */
-        [data-testid="stHorizontalBlock"]:has([data-testid="stVerticalBlockBorderWrapper"])
-          [data-testid="stVerticalBlock"] {{
-          flex: 1 1 auto !important;
-          min-height: 0 !important;
+        /* Top-level vertical block uses the full viewport height */
+        .stMainBlockContainer > [data-testid="stVerticalBlock"],
+        .block-container > [data-testid="stVerticalBlock"] {{
           height: 100% !important;
+          gap: 0.5rem !important;
         }}
 
-        /* The bordered panel itself — fills its cell, content must fit (no scroll) */
-        [data-testid="stHorizontalBlock"]:has([data-testid="stVerticalBlockBorderWrapper"])
-          [data-testid="stVerticalBlockBorderWrapper"] {{
-          flex: 1 1 auto !important;
-          height: 100% !important;
-          min-height: 0 !important;
+        /* Every bordered panel pinned to exactly half the leftover space */
+        [data-testid="stVerticalBlockBorderWrapper"] {{
+          height: var(--panel-h) !important;
+          min-height: var(--panel-h) !important;
+          max-height: var(--panel-h) !important;
           overflow: hidden !important;
           display: flex !important;
           flex-direction: column !important;
         }}
 
-        /* Inner vertical block of the panel also flexes */
+        /* Inner stack inside each panel uses flex column */
         [data-testid="stVerticalBlockBorderWrapper"] > [data-testid="stVerticalBlock"] {{
           flex: 1 1 auto !important;
           min-height: 0 !important;
           display: flex !important;
           flex-direction: column !important;
-          gap: 0.45rem !important;
+          gap: 0.4rem !important;
+          overflow: hidden !important;
         }}
 
-        /* Charts shrink to fit available cell height */
-        [data-testid="stAltairChart"] {{
-          flex: 1 1 auto;
-          min-height: 0;
-          overflow: hidden;
-        }}
-        .vega-embed, .vega-embed > div {{ height: 100% !important; }}
-        .vega-embed canvas, .vega-embed svg {{
-          max-height: 100% !important;
-          height: auto !important;
+        /* Make the panel rows hug their content vertically */
+        [data-testid="stHorizontalBlock"] {{
+          align-items: stretch !important;
+          margin-bottom: 0 !important;
         }}
       }}
 
-      /* On mobile (≤ 900px) we drop the fit-to-screen lock so users can scroll naturally */
+      /* ============== MOBILE FALLBACK (≤ 900px) ============== */
+      /* Release the viewport lock so phones can scroll normally */
       @media (max-width: 900px) {{
-        html, body, .stApp {{ height: auto; overflow: auto; }}
-        .block-container {{
+        html, body {{ height: auto; }}
+        .stApp, [data-testid="stAppViewContainer"],
+        [data-testid="stMain"], .stMainBlockContainer, .block-container {{
           height: auto !important;
           max-height: none !important;
           overflow: visible !important;
         }}
-        [data-testid="stHorizontalBlock"]:has([data-testid="stVerticalBlockBorderWrapper"]) {{
+        [data-testid="stVerticalBlockBorderWrapper"] {{
+          height: auto !important;
+          min-height: 260px;
           margin-bottom: 0.6rem !important;
         }}
       }}
