@@ -229,15 +229,39 @@ st.markdown(
   /* Responsive map height — adapts to viewport on the Plan tab */
   iframe[title^="streamlit_folium"] {{
     height: clamp(520px, 72vh, 760px) !important;
+    margin-bottom: 0 !important;
+    display: block;
   }}
+  /* Kill the empty space Streamlit injects below an iframe block */
+  div[data-testid="stIFrame"] {{ margin-bottom: 0 !important; padding-bottom: 0 !important; }}
 
   /* Tabs styling */
-  .stTabs [role="tablist"] {{ gap: 0; border-bottom: 1px solid {BORDER}; }}
+  .stTabs [role="tablist"] {{
+    gap: 0;
+    border-bottom: 1px solid {BORDER};
+    /* Sticky tab nav — stays visible right below the header on scroll */
+    position: sticky;
+    top: 64px;
+    background: {BG};
+    z-index: 99;
+    padding: 6px 0 0 0;
+    margin: 0 !important;
+  }}
   .stTabs [role="tab"] {{
     padding: 12px 18px; font-weight: 600; color: {FG_MUTED};
     border-bottom: 2px solid transparent;
   }}
   .stTabs [aria-selected="true"] {{ color: {FG}; border-bottom-color: {PRIMARY}; }}
+
+  /* Sticky header — Austin CycleSafe wordmark + version badge */
+  .acs-sticky-header {{
+    position: sticky;
+    top: 0;
+    background: {BG};
+    z-index: 100;
+    padding: 8px 0 10px 0;
+    margin-bottom: 0 !important;
+  }}
 
   /* Buttons — unified TEAL background across Streamlit + download buttons */
   .stButton > button,
@@ -283,18 +307,18 @@ st.markdown(
     transform: translateY(-1px);
     box-shadow: 0 2px 6px rgba(17,24,39,0.08), 0 4px 12px rgba(17,24,39,0.04);
   }}
-  /* Wrap every Plotly chart in a clean white card. Target the OUTER container
-     so the chart's title sits inside the card instead of overflowing above it.
-     IMPORTANT: no overflow:hidden — that was clipping the x-axis labels.
-     All four cards locked to the same height so the 2x2 grid is uniform. */
+  /* Wrap every Plotly chart in a clean white card. Tight padding so the
+     chart fills the card with no dead whitespace around the title or below
+     the axis labels. All four cards locked to the same height for a clean
+     2x2 grid. */
   div[data-testid="stPlotlyChart"] {{
     background: {SURFACE};
     border: 1px solid {BORDER};
     border-radius: 10px;
-    padding: 6px 8px 4px 8px;
+    padding: 4px 6px 2px 6px;
     box-shadow: 0 1px 2px rgba(17,24,39,0.04), 0 1px 4px rgba(17,24,39,0.03);
     margin-bottom: 10px;
-    height: 320px;
+    height: 310px;
     box-sizing: border-box;
   }}
   /* Reset the inner wrapper so styles don't double-apply */
@@ -603,13 +627,17 @@ def _baseline_shape(baseline_pct: float, x0=0, x1=1, axis="y"):
 
 
 def _chart_layout(title: str, height: int = 300) -> dict:
-    """Uniform chart layout. Card is 320px, chart 300px → all 4 same size."""
+    """Uniform chart layout. Card is 320px, chart 300px → all 4 same size.
+    Tight top margin pulls the plot area up close under the title — kills
+    the dead whitespace between heading and the first gridline.
+    """
     return dict(
         title=dict(text=title, font=dict(size=13, color=FG, family="Inter"),
-                   x=0, xanchor="left", y=0.97, yanchor="top"),
-        # Margins big enough that x-axis category labels and y-axis tick labels
-        # always render fully inside the chart bounds.
-        margin=dict(l=46, r=22, t=42, b=48),
+                   x=0, xanchor="left", y=0.985, yanchor="top",
+                   pad=dict(t=0, b=0)),
+        # Tightened top margin (42→26) and bottom margin kept generous so
+        # x-axis category labels never clip.
+        margin=dict(l=44, r=20, t=26, b=44),
         paper_bgcolor=SURFACE, plot_bgcolor=SURFACE,
         height=height, autosize=False, showlegend=False,
         font=dict(family="Inter", size=10, color=FG_MUTED),
@@ -701,7 +729,7 @@ def chart_severity():
 # ---------- HEADER + TABS ----------
 st.markdown(
     f"""
-    <div style="border-bottom: 1px solid {BORDER}; padding-bottom: 10px; margin-bottom: 6px;">
+    <div class="acs-sticky-header" style="border-bottom: 1px solid {BORDER};">
       <div style="display: flex; justify-content: space-between; align-items: baseline;">
         <div>
           <div style="font-size: 1.5rem; font-weight: 600; letter-spacing: -0.01em;">
@@ -1042,6 +1070,41 @@ with tab_plan:
                     f"<div class='num' style='font-size:1.15rem;'>{kcal:,}</div></div>",
                     unsafe_allow_html=True)
 
+        # ---- 03 · Saved rides — quick-list, fills the sidebar bottom ----
+        st.markdown('<div class="acs-section-title">03 · Saved rides</div>',
+                    unsafe_allow_html=True)
+        with st.container(border=True):
+            saved_list = st.session_state.saved_rides
+            if not saved_list:
+                st.markdown(
+                    f"<div style='font-size: 0.78rem; color: {FG_MUTED}; "
+                    f"line-height: 1.5;'>No rides saved yet. Draw a route on the map "
+                    f"and click <b style='color:{FG};'>💾 Save ride</b> to add it here. "
+                    f"Compare alternate routes side-by-side on the Results tab.</div>",
+                    unsafe_allow_html=True,
+                )
+            else:
+                for i, r in enumerate(saved_list, 1):
+                    r_meters = r.get("distance_m", 0)
+                    r_miles = r_meters / 1609.344 if r_meters else 0
+                    r_risk = r.get("risk", {}) or {}
+                    r_band = r_risk.get("band", "calm")
+                    pill_color = {"calm": SUCCESS, "caution": PRIMARY,
+                                  "danger": DANGER}.get(r_band, FG_MUTED)
+                    st.markdown(
+                        f"<div style='display:flex; justify-content:space-between; "
+                        f"align-items:center; padding: 5px 0; "
+                        f"border-bottom: 1px solid {BORDER}; font-size: 0.82rem;'>"
+                        f"<span><b>{r.get('name', f'Ride {i}')}</b> "
+                        f"<span style='color:{FG_MUTED}; font-size: 0.76rem;'>"
+                        f"· {r_miles:.2f} mi</span></span>"
+                        f"<span style='display:inline-block; width:10px; height:10px; "
+                        f"border-radius:999px; background:{pill_color};' "
+                        f"title='{r_risk.get('band_label', '—')}'></span>"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
+
     # =========================================================
     # Map column — fills the right 2/3 of the viewport
     # =========================================================
@@ -1318,6 +1381,16 @@ def _render_ride_card(title: str, geojson: dict | None, meters: float, risk: dic
             </script>
             """
             components.html(html, height=map_height + 4)
+
+            # Compact { } toggle directly under the map for THIS ride's JSON
+            with st.expander("{ } JSON", expanded=False):
+                st.json({
+                    "title": title,
+                    "distance_m": meters,
+                    "distance_mi": round(miles, 3),
+                    "risk": risk,
+                    "geojson": geojson,
+                })
         else:
             st.info("No route drawn for this ride yet.")
     with sum_col:
@@ -1357,11 +1430,8 @@ def _render_ride_card(title: str, geojson: dict | None, meters: float, risk: dic
             """,
             unsafe_allow_html=True,
         )
-    with st.expander("Full JSON"):
-        st.json({
-            "title": title, "distance_m": meters, "distance_mi": round(miles, 3),
-            "risk": risk, "geojson": geojson,
-        })
+    # JSON drawer is now rendered inside map_col directly under the map,
+    # labeled "{ } JSON" — see the components.html block above.
 
 
 # ============================================================
