@@ -765,7 +765,7 @@ with tab_plan:
                 <div class="acs-plan-kicker">Route distance</div>
                 <div class="acs-distance-num">{miles:.2f} mi</div>
                 <div style="font-size: 0.78rem; color: rgba(255,255,255,0.7);">
-                  {km:.2f} km · {len((st.session_state.drawn_route or {}).get('geometry', {}).get('coordinates', []))} route points
+                  {km:.2f} km · {len(_route_coords(st.session_state.drawn_route))} route points
                 </div>
               </div>
             </div>
@@ -976,9 +976,13 @@ with tab_plan:
 # when the user lands on Home and never visits Plan/Results.
 # ============================================================
 def _render_ride_card(title: str, geojson: dict | None, meters: float, risk: dict | None) -> None:
-    """One self-contained ride card: header strip + map + summary + JSON drawer."""
-    import folium
-    from streamlit_folium import st_folium
+    """One self-contained ride card: header strip + map + summary + JSON drawer.
+
+    Uses a hand-rolled Leaflet HTML component (not folium) so we have full
+    control over fit_bounds — the streamlit-folium pipeline was dropping the
+    fit_bounds JS call on small embedded maps and leaving them at world zoom.
+    """
+    import streamlit.components.v1 as components
 
     risk = risk or {}
     miles = meters / 1609.344 if meters else 0
@@ -1004,51 +1008,53 @@ def _render_ride_card(title: str, geojson: dict | None, meters: float, risk: dic
     with map_col:
         coords = _route_coords(geojson)
         if coords:
-            import math as _math
-            lats = [c[1] for c in coords]; lngs = [c[0] for c in coords]
-            sw_lat, ne_lat = min(lats), max(lats)
-            sw_lng, ne_lng = min(lngs), max(lngs)
-            center = [(sw_lat + ne_lat) / 2, (sw_lng + ne_lng) / 2]
-
-            # Web Mercator zoom calc — picks the highest zoom that fits the bbox
-            # in the rendered map size. Belt-and-braces because folium/streamlit
-            # sometimes drops the fit_bounds JS call on the small mini-map.
-            def _calc_zoom(s_lat, s_lng, n_lat, n_lng, w_px=460, h_px=300):
-                WORLD_DIM = 256
-                def _y(lat, z):
-                    s = _math.sin(_math.radians(lat))
-                    s = max(min(s, 0.9999), -0.9999)
-                    return (0.5 - _math.log((1+s)/(1-s)) / (4*_math.pi)) * (WORLD_DIM * 2**z)
-                def _x(lng, z):
-                    return (lng + 180) / 360 * (WORLD_DIM * 2**z)
-                for z in range(18, 1, -1):
-                    w = abs(_x(n_lng, z) - _x(s_lng, z))
-                    h = abs(_y(s_lat, z) - _y(n_lat, z))
-                    if w <= w_px and h <= h_px:
-                        return z
-                return 2
-
-            zoom = _calc_zoom(sw_lat, sw_lng, ne_lat, ne_lng)
-            m = folium.Map(location=center, zoom_start=zoom,
-                           tiles="OpenStreetMap",
-                           zoom_control=True, scrollWheelZoom=False)
-            folium.PolyLine([[c[1], c[0]] for c in coords],
-                            color=PRIMARY, weight=5, opacity=0.95).add_to(m)
-            folium.CircleMarker([coords[0][1], coords[0][0]], radius=6,
-                                color="white", weight=2, fill=True,
-                                fill_color=SUCCESS, fill_opacity=1.0,
-                                tooltip="Start").add_to(m)
-            folium.CircleMarker([coords[-1][1], coords[-1][0]], radius=6,
-                                color="white", weight=2, fill=True,
-                                fill_color=DANGER, fill_opacity=1.0,
-                                tooltip="End").add_to(m)
-            # Pad bounds slightly so the line isn't flush against the edge.
-            lat_pad = max((ne_lat - sw_lat) * 0.10, 0.0008)
-            lng_pad = max((ne_lng - sw_lng) * 0.10, 0.0008)
-            m.fit_bounds([[sw_lat - lat_pad, sw_lng - lng_pad],
-                          [ne_lat + lat_pad, ne_lng + lng_pad]])
-            st_folium(m, height=320, width=None, returned_objects=[],
-                      key=f"results_map_{title}")
+            # Build [lat, lng] pairs for Leaflet
+            ll = [[float(c[1]), float(c[0])] for c in coords]
+            ll_json = json.dumps(ll)
+            start = ll[0]; end = ll[-1]
+            map_id = ("m_" + "".join(ch for ch in title if ch.isalnum())
+                      + str(abs(hash(ll_json)) % 100000))
+            map_height = 320
+            html = f"""
+            <link rel="stylesheet"
+                  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+            <style>
+              #{map_id} {{ height: {map_height}px; width: 100%;
+                         border-radius: 0 0 8px 8px; }}
+            </style>
+            <div id="{map_id}"></div>
+            <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+            <script>
+              (function() {{
+                var coords = {ll_json};
+                var map = L.map("{map_id}", {{
+                  scrollWheelZoom: false, zoomControl: true
+                }});
+                L.tileLayer(
+                  "https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png",
+                  {{ attribution: "&copy; OpenStreetMap contributors",
+                     maxZoom: 19 }}
+                ).addTo(map);
+                var line = L.polyline(coords, {{
+                  color: "{PRIMARY}", weight: 5, opacity: 0.95
+                }}).addTo(map);
+                L.circleMarker({json.dumps(start)}, {{
+                  radius: 6, color: "white", weight: 2,
+                  fillColor: "{SUCCESS}", fillOpacity: 1.0
+                }}).bindTooltip("Start").addTo(map);
+                L.circleMarker({json.dumps(end)}, {{
+                  radius: 6, color: "white", weight: 2,
+                  fillColor: "{DANGER}", fillOpacity: 1.0
+                }}).bindTooltip("End").addTo(map);
+                // Defer fitBounds slightly so the iframe has its real size
+                setTimeout(function() {{
+                  map.invalidateSize();
+                  map.fitBounds(line.getBounds(), {{ padding: [20, 20] }});
+                }}, 50);
+              }})();
+            </script>
+            """
+            components.html(html, height=map_height + 4)
         else:
             st.info("No route drawn for this ride yet.")
     with sum_col:
