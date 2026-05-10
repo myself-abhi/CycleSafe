@@ -798,20 +798,31 @@ def _format_chart_title(name: str, subtitle: str) -> str:
 
 def _chart_layout(title: str, height: int = CHART_INNER_HEIGHT,
                   show_legend: bool = False) -> dict:
-    """Fixed-height Plotly layout — predictable rendering on every screen."""
+    """Auto-fitting Plotly layout. automargin lets the chart tighten its edges
+    against the panel; tickfont sized for legibility on the smallest viewport
+    (220px floor) but readable up through 4K. Legend always at the bottom so
+    it never steals horizontal space at narrower widths.
+    """
     return dict(
         title=dict(text=title, font=dict(size=13, color=FG, family="Inter"),
                    x=0, xanchor="left", y=0.985, yanchor="top",
                    pad=dict(t=0, b=0)),
-        margin=dict(l=64, r=20, t=30, b=38 if not show_legend else 56),
+        # Margins are FALLBACKS — automargin on the axes tightens them
+        # automatically against actual rendered content.
+        margin=dict(l=56, r=18, t=30, b=36 if not show_legend else 52,
+                    autoexpand=True),
         paper_bgcolor=SURFACE, plot_bgcolor=SURFACE,
         height=height, autosize=False, showlegend=show_legend,
         legend=dict(orientation="h", x=0.5, xanchor="center",
-                    y=-0.18, yanchor="top",
+                    y=-0.16, yanchor="top",
                     bgcolor="rgba(0,0,0,0)", borderwidth=0,
                     font=dict(size=10, color=FG_MUTED)),
         font=dict(family="Inter", size=10, color=FG_MUTED),
         hoverlabel=dict(bgcolor=FG, font=dict(color="white", family="Inter")),
+        # Default both axes to auto-fitting their tick labels and to a tight,
+        # readable font size that holds up at the smallest panel size.
+        xaxis=dict(automargin=True, tickfont=dict(size=10, color=FG_MUTED)),
+        yaxis=dict(automargin=True, tickfont=dict(size=10, color=FG_MUTED)),
     )
 
 
@@ -834,8 +845,10 @@ def chart_time_of_day():
     fig.add_shape(**_baseline_shape(D["baseline"] * 100))
     fig.update_layout(**_chart_layout(
         _format_chart_title("Risk by time of day", "evenings 2× midday")))
-    fig.update_yaxes(ticksuffix="%", gridcolor=BORDER, zeroline=False)
-    fig.update_xaxes(showgrid=False)
+    # automargin + max 6 ticks so labels never crowd or clip on narrow panels
+    fig.update_yaxes(ticksuffix="%", gridcolor=BORDER, zeroline=False,
+                     automargin=True, nticks=5)
+    fig.update_xaxes(showgrid=False, automargin=True, nticks=6)
     return fig
 
 
@@ -853,8 +866,9 @@ def chart_speed():
     ))
     fig.update_layout(**_chart_layout(
         _format_chart_title("Risk by street speed", "45 mph triples it")))
-    fig.update_xaxes(ticksuffix="%", gridcolor=BORDER, range=[0, 24])
-    fig.update_yaxes(showgrid=False, autorange="reversed")
+    fig.update_xaxes(ticksuffix="%", gridcolor=BORDER, range=[0, 24],
+                     automargin=True, nticks=5)
+    fig.update_yaxes(showgrid=False, autorange="reversed", automargin=True)
     return fig
 
 
@@ -875,8 +889,10 @@ def chart_year():
         _format_chart_title("Fatalities by year", "2017 the worst"),
         show_legend=True),
         barmode="overlay")
-    fig.update_yaxes(gridcolor=BORDER)
-    fig.update_xaxes(showgrid=False, dtick=1)
+    fig.update_yaxes(gridcolor=BORDER, automargin=True, nticks=5)
+    # nticks=8 means Plotly auto-thins the year labels on small viewports
+    # (shows e.g. 2010, 2012, 2014, 2016 instead of every year).
+    fig.update_xaxes(showgrid=False, automargin=True, nticks=8)
     return fig
 
 
