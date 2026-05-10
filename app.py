@@ -309,10 +309,9 @@ st.markdown(
     transform: translateY(-1px);
     box-shadow: 0 2px 6px rgba(17,24,39,0.08), 0 4px 12px rgba(17,24,39,0.04);
   }}
-  /* Wrap every Plotly chart in a clean white card. Tight padding so the
-     chart fills the card with no dead whitespace around the title or below
-     the axis labels. All four cards locked to the same height for a clean
-     2x2 grid. Compact 250px so the full Home tab fits in viewport. */
+  /* Wrap every Plotly chart in a clean white card. Responsive height —
+     grows on tall monitors, stays compact on laptops. clamp() floor at
+     250px (laptop), ideal at 30% of viewport, ceiling 360px (4K). */
   div[data-testid="stPlotlyChart"] {{
     background: {SURFACE};
     border: 1px solid {BORDER};
@@ -320,8 +319,14 @@ st.markdown(
     padding: 4px 6px 2px 6px;
     box-shadow: 0 1px 2px rgba(17,24,39,0.04), 0 1px 4px rgba(17,24,39,0.03);
     margin-bottom: 8px;
-    height: 250px;
+    height: clamp(250px, 30vh, 360px);
     box-sizing: border-box;
+  }}
+  /* Inner Plotly element fills the responsive card */
+  div[data-testid="stPlotlyChart"] > div,
+  div[data-testid="stPlotlyChart"] .js-plotly-plot,
+  div[data-testid="stPlotlyChart"] .plot-container {{
+    height: 100% !important; width: 100% !important;
   }}
   /* Reset the inner wrapper so styles don't double-apply */
   div[data-testid="stPlotlyChart"] > div {{
@@ -628,24 +633,26 @@ def _baseline_shape(baseline_pct: float, x0=0, x1=1, axis="y"):
     )
 
 
-def _chart_layout(title: str, height: int = 240) -> dict:
-    """Uniform chart layout. Card is 250px, chart 240px → all 4 same size.
-    Tight top margin pulls the plot area up close under the title — kills
-    the dead whitespace between heading and the first gridline.
+def _chart_layout(title: str, height: int | None = None) -> dict:
+    """Uniform chart layout. Plotly autosizes to fit the responsive card,
+    so charts grow on tall monitors and stay compact on laptops.
     """
-    return dict(
+    layout = dict(
         title=dict(text=title, font=dict(size=12, color=FG, family="Inter"),
                    x=0, xanchor="left", y=0.985, yanchor="top",
                    pad=dict(t=0, b=0)),
-        # Tightened margins so all 4 chart bodies have ~150px of plot area
-        # within a 240px Plotly canvas — title stays readable, axis labels
-        # never clip, and the 2x2 grid fits in viewport without scrolling.
+        # Tightened margins keep the plot area maximised — title stays
+        # readable, axis labels never clip, no dead whitespace at edges.
         margin=dict(l=42, r=18, t=24, b=40),
         paper_bgcolor=SURFACE, plot_bgcolor=SURFACE,
-        height=height, autosize=False, showlegend=False,
+        autosize=True, showlegend=False,
         font=dict(family="Inter", size=9, color=FG_MUTED),
         hoverlabel=dict(bgcolor=FG, font=dict(color="white", family="Inter")),
     )
+    if height is not None:
+        layout["height"] = height
+        layout["autosize"] = False
+    return layout
 
 
 # NOTE: @st.cache_data was removed from these chart functions because the
