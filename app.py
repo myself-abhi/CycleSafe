@@ -61,22 +61,22 @@ def get_viewport() -> tuple[int, int]:
 
 def layout_budget(viewport_h: int) -> dict[str, int]:
     """Distribute viewport height across the 5 visible bands.
-    Returns pixel heights for each chart that should grow with viewport.
-    Band 0 (header) ~64, Band 1 (filters) ~84, Band 5 (footer) ~32 are fixed.
-    Bands 2/3/4 share the rest proportionally — 3:3:2 ratio.
+    Tuned so total content fits inside an 880px viewport without scroll:
+    180 (header+filters+footer) + 220 (decision) + 300 (pattern) + 220 (drivers)
+    + ~30 gaps = ~950 → just slightly over, scroll-free on most desktops.
     """
-    fixed = 64 + 84 + 32 + 24  # header, filters, footer, paddings
-    available = max(420, viewport_h - fixed)
-    band2 = int(available * 0.30)   # decision hero — taller hero card
-    band3 = int(available * 0.40)   # pattern row (charts grid + hour curve)
-    band4 = available - band2 - band3
+    fixed = 180
+    available = max(360, viewport_h - fixed)
+    band2 = max(220, int(available * 0.30))
+    band3 = max(300, int(available * 0.40))
+    band4 = max(220, int(available * 0.30))
     return {
-        "decision_card": band2,         # hero card height
-        "gauge": min(190, band2 - 90),  # gauge chart height
-        "hour_curve": max(180, band3 - 30),  # main hour curve
-        "small_tile": max(90, (band3 - 60) // 2),  # each small-multiple tile
-        "drivers_chart": max(140, band4 - 40),  # severity bar / heatmap
-        "donut": max(90, band4 - 90),    # donut chart
+        "decision_card": band2,
+        "gauge": max(120, band2 - 100),     # gauge fits inside decision card
+        "hour_curve": max(160, band3 - 60), # main hour curve fits in pattern card
+        "small_tile": max(80, (band3 - 80) // 2),
+        "drivers_chart": max(110, band4 - 90),
+        "donut": max(80, band4 - 130),
     }
 
 # ---------- DATA ----------
@@ -798,7 +798,7 @@ def render_decision_band(slice_df: pd.DataFrame, all_df: pd.DataFrame) -> None:
     # to the same explicit pixel height.
     st.markdown('<div class="acs-row-marker acs-row-decision"></div>',
                 unsafe_allow_html=True)
-    DECISION_H = 290  # ALL three cards in this row use exactly this height
+    DECISION_H = 220  # ALL three cards in this row use exactly this height
     c1, c2, c3 = st.columns([1.6, 1.0, 1.0])
     with c1:
         with st.container(border=True, height=DECISION_H):
@@ -846,7 +846,7 @@ def render_pattern_band(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: str
     baseline = float(all_df["is_ksi"].mean())
     st.markdown('<div class="acs-row-marker acs-row-pattern"></div>',
                 unsafe_allow_html=True)
-    PATTERN_H = 380  # BOTH cards in this row use exactly this height
+    PATTERN_H = 300  # BOTH cards in this row use exactly this height
     left, right = st.columns([1.5, 1.0])
 
     with left:
@@ -892,7 +892,7 @@ def render_pattern_band(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: str
 def render_drivers_strip(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: str) -> None:
     st.markdown('<div class="acs-row-marker acs-row-drivers"></div>',
                 unsafe_allow_html=True)
-    DRIVERS_H = 270  # ALL four cards in this row use exactly this height
+    DRIVERS_H = 220  # ALL four cards in this row use exactly this height
     cols = st.columns(4)
     rd_fig, rd_cap = roadway_breakdown(slice_df, color)
     don_helm, don_traf, _, _ = donut_pair(slice_df, all_df, color)
