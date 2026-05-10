@@ -777,15 +777,15 @@ def inject_css() -> None:
     .acs-check .icon {{
       flex: 0 0 auto; font-size: clamp(12px, 1vw, 15px); line-height: 1.4;
     }}
-    /* The gauge value + tier label are pulled UP via negative margin so they
-       sit inside the empty space at the bottom of the semicircular gauge
-       arc, visually centered. Clamp scales with viewport so the overlay
-       works at every screen size without hardcoded pixel offsets. */
+    /* Gauge value + tier label use translate to visually OVERLAY the empty
+       space inside the semicircle. transform doesn't affect document flow
+       so siblings don't shift; it just pulls these elements up visually. */
     .acs-gauge-value {{
-      text-align: center; font-size: clamp(20px, 1.85vw, 32px);
+      text-align: center; font-size: clamp(22px, 2.0vw, 34px);
       font-weight: 700; line-height: 1; letter-spacing: -0.01em;
-      margin: clamp(-70px, -5vh, -36px) 0 2px 0 !important;
-      position: relative; z-index: 2;
+      margin: 0; padding: 0;
+      transform: translateY(clamp(-90px, -7vh, -50px));
+      position: relative; z-index: 5;
     }}
     .acs-gauge-value .suffix {{
       font-size: clamp(10px, 0.85vw, 14px); color: {MUTED}; font-weight: 500;
@@ -793,12 +793,18 @@ def inject_css() -> None:
     .acs-tier {{
       text-align: center; font-size: clamp(10px, 0.85vw, 13px);
       color: {INK}; font-weight: 600; letter-spacing: 0.04em;
-      text-transform: uppercase; margin-top: 2px;
-      position: relative; z-index: 2;
+      text-transform: uppercase; margin: 0;
+      transform: translateY(clamp(-86px, -6.5vh, -46px));
+      position: relative; z-index: 5;
     }}
     .acs-tier .delta {{
       display: block; font-size: clamp(9px, 0.78vw, 12px); font-weight: 500;
       color: {MUTED}; text-transform: none; letter-spacing: 0; margin-top: 2px;
+    }}
+    /* The wrapper that holds value + tier — also pull up so its parent's
+       padding doesn't push it out of the gauge area. */
+    div[data-testid="stMarkdown"]:has(.acs-gauge-value) {{
+      margin-top: 0 !important; padding-top: 0 !important;
     }}
     .acs-footer {{
       font-size: clamp(9px, 0.78vw, 12px); color: {MUTED};
