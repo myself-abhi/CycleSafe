@@ -23,7 +23,12 @@ except ImportError:
 
 # ---------- CONFIG ----------
 DATA_PATH = "bike_crash.csv"
-MIN_SAMPLE = 30  # sample-size floor for trustworthy verdict
+# Sample-size tiers. Below MIN_SAMPLE we refuse to verdict (data too thin
+# to trust). Between MIN_SAMPLE and CONFIDENT_SAMPLE we show a verdict but
+# flag it as "limited data" so the rider knows the score is directional,
+# not bankable. At or above CONFIDENT_SAMPLE we drop the caveat.
+MIN_SAMPLE = 21        # hard floor — refuse verdict below this
+CONFIDENT_SAMPLE = 30  # full confidence above this; 21..29 = low confidence
 
 # Design tokens
 INK, BODY, MUTED = "#0A0A0A", "#374151", "#6B7280"
@@ -69,8 +74,9 @@ def layout_budget(viewport_h: int) -> dict[str, int]:
     GAPS  = 28    # ~12 px between each of 3 rows
     available = max(540, viewport_h - FIXED - GAPS)
 
-    # Per-row ratios — decision row needs more height for verdict + KPI strip,
-    # pattern row gets most space for its small-multiples grid + curve.
+    # Per-row ratios. Decision row sized so the longest verdict (INSUFFICIENT
+    # has a 2-line headline + 2-line description + KPI strip) fits without
+    # clipping. Pattern row gets the most space for its small-multiples grid.
     decision_card = max(230, int(available * 0.30))   # 3 cards same height
     pattern_card  = max(310, int(available * 0.40))   # 2 cards same height
     drivers_card  = max(220, int(available * 0.27))   # 4 cards same height
@@ -228,22 +234,28 @@ def decide(slice_df: pd.DataFrame, all_df: pd.DataFrame) -> Verdict:
         )
     ksi = float(slice_df["is_ksi"].mean())
     delta = (ksi - baseline) * 100
+    # Low-confidence band: we have a number but the sample is thin.
+    # Tag the verdict's sub-text so the rider treats the score as directional.
+    low_conf = n < CONFIDENT_SAMPLE
+    conf_note = (f" Limited data ({n} crashes), treat as directional."
+                 if low_conf else "")
     if delta <= 1:
         head = "Conditions look unusually safe" if delta < -1 else "In line with the Austin baseline"
         return Verdict("GO", head,
             f"Serious-injury rate for these conditions is {ksi*100:.1f}% vs the "
-            f"{baseline*100:.1f}% citywide baseline ({delta:+.1f} pp). Helmet on, lights on, ride.",
+            f"{baseline*100:.1f}% citywide baseline ({delta:+.1f} pp). Helmet on, lights on, ride."
+            f"{conf_note}",
             GREEN, n, ksi, baseline, delta)
     if delta <= 5:
         return Verdict("CAUTION", "Riskier than typical Austin conditions",
             f"Serious-injury rate for these conditions is {ksi*100:.1f}% vs the "
             f"{baseline*100:.1f}% citywide baseline ({delta:+.1f} pp). Ride with extra caution "
-            f"or shift one variable.",
+            f"or shift one variable.{conf_note}",
             AMBER, n, ksi, baseline, delta)
     return Verdict("NO-GO", "Well above the Austin baseline, reconsider",
         f"Serious-injury rate for these conditions is {ksi*100:.1f}% vs the "
         f"{baseline*100:.1f}% citywide baseline ({delta:+.1f} pp). Consider waiting, driving, "
-        f"or changing route.",
+        f"or changing route.{conf_note}",
         RED, n, ksi, baseline, delta)
 
 
@@ -731,33 +743,40 @@ def inject_css() -> None:
       letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 10px;
     }}
     /* Decision card body: flex column that pins the KPI strip at the bottom
-       and lets the text flex in the middle. Guarantees no overflow inside
-       the fixed-height card regardless of how long the verdict sub-text is. */
+       and lets the text flex in the middle. Tight line-heights + line-clamp
+       guarantee the longest verdict (INSUFFICIENT, 2-line headline + 2-line
+       sub) still fits without clipping. overflow:hidden is a safety net. */
     .acs-decision-body {{
       display: flex; flex-direction: column; justify-content: space-between;
-      height: 100%; min-height: 0;
+      height: 100%; min-height: 0; overflow: hidden;
     }}
-    .acs-decision-body > div:first-child {{ flex: 1 1 auto; min-height: 0; }}
+    .acs-decision-body > div:first-child {{
+      flex: 1 1 auto; min-height: 0; overflow: hidden;
+    }}
     .acs-hero {{
-      font-size: clamp(20px, 2.0vw, 34px); line-height: 1.2; font-weight: 700;
-      color: {INK}; letter-spacing: -0.01em; margin: 0 0 6px 0;
+      font-size: clamp(18px, 1.75vw, 30px); line-height: 1.15; font-weight: 700;
+      color: {INK}; letter-spacing: -0.01em; margin: 0 0 4px 0;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+      overflow: hidden;
     }}
     .acs-sub {{
-      font-size: clamp(11px, 0.92vw, 14px); line-height: 1.5;
-      color: {BODY}; margin: 0 0 10px 0;
+      font-size: clamp(10.5px, 0.85vw, 13px); line-height: 1.4;
+      color: {BODY}; margin: 0 0 6px 0;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+      overflow: hidden;
     }}
     .acs-kpi-row {{
       display: flex; gap: clamp(8px, 1vw, 18px);
-      padding-top: 10px; border-top: 1px solid {BORDER};
+      padding-top: 8px; border-top: 1px solid {BORDER};
     }}
     .acs-kpi {{ flex: 1; min-width: 0; }}
     .acs-kpi .label {{
       font-size: clamp(8px, 0.7vw, 10.5px); color: {MUTED};
       text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600;
-      margin-bottom: 4px;
+      margin-bottom: 3px;
     }}
     .acs-kpi .num {{
-      font-size: clamp(16px, 1.55vw, 26px); color: {INK};
+      font-size: clamp(15px, 1.4vw, 24px); color: {INK};
       font-weight: 700; line-height: 1;
     }}
     .acs-section {{
@@ -1041,7 +1060,7 @@ def render_drivers_strip(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: st
 def render_footer() -> None:
     st.markdown("""
     <div class="acs-footer">
-      Sample-size floor: 30 crashes · KSI = Killed + Incapacitating Injury ·
+      Sample-size tiers: full confidence ≥ 30, limited 21–29, no verdict below 21 · KSI = Killed + Incapacitating Injury ·
       Data: City of Austin Open Data, 2010–2017 ·
       Built for the Week 4 Building Products assignment.
     </div>
