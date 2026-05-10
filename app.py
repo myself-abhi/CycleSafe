@@ -98,10 +98,11 @@ def inject_css(mode: str) -> None:
         height: clamp(28px, 3vw, 34px);
         border-radius: 8px;
         background: {accent};
+        color: {CHARCOAL if is_danger else WHITE};   /* SVG stroke inherits via currentColor */
         display: flex; align-items: center; justify-content: center;
         flex-shrink: 0;
       }}
-      .brand-icon svg {{ width: 60%; height: 60%; }}
+      .brand-icon svg {{ width: 60%; height: 60%; stroke: currentColor !important; }}
       .brand-name {{
         color: {page_fg};
         font-weight: 800;
@@ -562,14 +563,13 @@ BIKE_SVG = '''
 '''
 
 
-def render_brand(mode: str):
-    is_danger = (mode == "danger")
-    icon_color = CHARCOAL if is_danger else WHITE
-    fg = WHITE if is_danger else CHARCOAL
+def render_brand():
+    """No mode arg — colors are driven entirely by CSS classes so the
+    verdict-mode CSS re-injection takes effect without inline-style override."""
     st.markdown(
         f'<div class="brand-row">'
-        f'<div class="brand-icon" style="color:{icon_color}">{BIKE_SVG}</div>'
-        f'<div class="brand-name" style="color:{fg}">Austin CycleSafe</div>'
+        f'<div class="brand-icon">{BIKE_SVG}</div>'
+        f'<div class="brand-name">Austin CycleSafe</div>'
         f'<div class="brand-tag">Go / No-Go decision · 2,463 crashes · 2010–2017 City of Austin</div>'
         f'</div>',
         unsafe_allow_html=True,
@@ -745,7 +745,7 @@ def main():
 
     # Render UI shell first so filters paint before we know the verdict
     inject_css("safe")
-    render_brand("safe")
+    render_brand()
     filters = render_filters(df)
 
     filtered = filter_df(df, filters)
