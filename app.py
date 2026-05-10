@@ -82,12 +82,13 @@ st.markdown(
     font-weight: 600; color: {PRIMARY}; margin: 0 0 0.3rem 0;
   }}
   .acs-question {{
-    font-size: clamp(1.05rem, 1.5vw, 1.35rem); font-weight: 600; line-height: 1.2;
+    font-size: clamp(0.92rem, 1.15vw, 1.1rem); font-weight: 600; line-height: 1.25;
     letter-spacing: -0.01em; color: {FG}; margin: 0 0 0.4rem 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }}
   .acs-answer {{
-    font-size: clamp(0.85rem, 1.1vw, 0.95rem); line-height: 1.5; color: {FG_MUTED};
-    margin: 0; max-width: 56ch;
+    font-size: clamp(0.82rem, 1vw, 0.9rem); line-height: 1.5; color: {FG_MUTED};
+    margin: 0; max-width: 64ch;
   }}
   .acs-answer .accent {{ color: {DANGER}; font-weight: 600; }}
   .acs-yes-tag {{
@@ -261,10 +262,11 @@ st.markdown(
     background: {SURFACE};
     border: 1px solid {BORDER};
     border-radius: 10px;
-    padding: 12px 14px 8px 14px;
+    padding: 8px 10px 8px 10px;
     box-shadow: 0 1px 2px rgba(17,24,39,0.04), 0 1px 4px rgba(17,24,39,0.03);
     margin-bottom: 10px;
     overflow: hidden;
+    min-height: 250px;
   }}
   /* Reset the inner wrapper so styles don't double-apply */
   div[data-testid="stPlotlyChart"] > div {{
@@ -289,7 +291,38 @@ st.markdown(
     font-size: 0.72rem; margin-right: 6px;
   }}
 
-  /* Numbered accordion (mirrors HTML <details class="acc-panel">) */
+  /* Section title — replaces the expander header on the Plan sidebar.
+     Always-visible heading rendered just above its bordered container. */
+  .acs-section-title {{
+    font-weight: 600; color: {FG}; font-size: 0.78rem;
+    letter-spacing: 0.04em;
+    margin: 0.7rem 0 0.3rem 0;
+    padding: 0.45rem 0.75rem;
+    background: {FG}; color: white;
+    border-radius: 6px;
+  }}
+  /* Bordered container that follows the section title — tightened paddings */
+  .acs-section-title + div[data-testid="stVerticalBlockBorderWrapper"],
+  .acs-section-title + div[data-testid="stContainer"] {{
+    margin-top: -0.35rem !important;
+    border-top-left-radius: 0 !important;
+    border-top-right-radius: 0 !important;
+  }}
+
+  /* Compact Streamlit form fields inside the Plan sidebar */
+  div[data-testid="stSelectbox"] > label,
+  div[data-testid="stNumberInput"] > label {{
+    font-size: 0.72rem !important;
+    color: {FG_MUTED} !important;
+    margin-bottom: 0.15rem !important;
+    padding: 0 !important;
+  }}
+  div[data-testid="stSelectbox"] > div > div,
+  div[data-testid="stNumberInput"] > div > div {{
+    min-height: 34px !important;
+  }}
+
+  /* Legacy expander styles kept for any other tabs that still use them */
   div[data-testid="stExpander"] {{
     border: 1px solid {BORDER}; border-radius: 8px; background: {SURFACE};
     margin-top: 0.55rem;
@@ -540,11 +573,13 @@ def _baseline_shape(baseline_pct: float, x0=0, x1=1, axis="y"):
     )
 
 
-def _chart_layout(title: str, height: int = 190) -> dict:
+def _chart_layout(title: str, height: int = 230) -> dict:
+    """Uniform chart layout. Generous margins so axis labels never clip."""
     return dict(
         title=dict(text=title, font=dict(size=13, color=FG, family="Inter"),
-                   x=0, xanchor="left", y=0.97, yanchor="top"),
-        margin=dict(l=4, r=4, t=30, b=18),
+                   x=0, xanchor="left", y=0.96, yanchor="top"),
+        # Bigger l/r/b margins to keep axis labels fully inside the card
+        margin=dict(l=42, r=24, t=40, b=42),
         paper_bgcolor=SURFACE, plot_bgcolor=SURFACE,
         height=height, showlegend=False,
         font=dict(family="Inter", size=10, color=FG_MUTED),
@@ -918,35 +953,10 @@ with tab_plan:
             unsafe_allow_html=True,
         )
 
-        # ---- (2) Recommendation banner ----
-        rec_class = "guard" if risk["used_fallback"] and risk["level"].startswith("baseline") else risk["band"]
-        if risk["band"] == "calm":
-            rec_title = "Comparatively safer window"
-            rec_body = (f"These conditions sit at or below the {agg['baseline']*100:.2f}% baseline. "
-                        f"Helmet on, lights on, stay visible — \"safer\" isn't \"safe\".")
-        elif risk["band"] == "caution":
-            rec_title = "Above baseline — ride with caution"
-            rec_body = (f"Risk is elevated ({risk['rate']*100:.1f}% vs {agg['baseline']*100:.2f}%). "
-                        f"Watch for right-hooks, signal turns, assume drivers don't see you.")
-        else:
-            rec_title = "Well above baseline — reconsider"
-            ratio = risk["rate"] / agg["baseline"]
-            rec_body = (f"These conditions historically put cyclists in the hospital "
-                        f"{ratio:.1f}× as often as the city average. "
-                        f"Shift to a calmer street, earlier time, or dry surface if you can.")
-        if st.session_state.f_helmet == "No" and risk["band"] != "calm":
-            rec_body += "  Helmets correlate with a 5.6% serious-injury rate vs 10.6% unhelmeted."
-        st.markdown(
-            f'<div class="acs-rec {rec_class}"><h4>{rec_title}</h4><p>{rec_body}</p></div>',
-            unsafe_allow_html=True,
-        )
-
-        # =====================================================
-        # Numbered accordion sections — match the HTML preview
-        # =====================================================
-
-        # ---- 01 · Conditions (open) ----
-        with st.expander("01 · Conditions", expanded=True):
+        # ---- 01 · Conditions — always visible, no expander chrome ----
+        st.markdown('<div class="acs-section-title">01 · Conditions</div>',
+                    unsafe_allow_html=True)
+        with st.container(border=True):
             ca, cb = st.columns(2)
             with ca:
                 st.selectbox("Day",
@@ -957,22 +967,27 @@ with tab_plan:
                     "Morning Rush (6–10 AM)", "Midday (10 AM–3 PM)", "Evening Rush (3–7 PM)",
                     "Night (7 PM–12 AM)", "Late Night (12–6 AM)",
                 ], key="f_tb")
-            st.selectbox("Street type", [
-                "Calm street (≤25 mph)", "Neighborhood arterial (26–35 mph)",
-                "Major arterial (36–45 mph)", "High-speed road (46+ mph)",
-            ], key="f_sb")
-            st.selectbox("Location on road", [
-                "At or near an intersection", "Mid-block (no intersection)",
-                "Driveway / parking access",
-            ], key="f_loc")
             cc, cd = st.columns(2)
             with cc:
-                st.selectbox("Surface", ["Dry", "Wet", "Other / Unknown"], key="f_sf")
+                st.selectbox("Street type", [
+                    "Calm street (≤25 mph)", "Neighborhood arterial (26–35 mph)",
+                    "Major arterial (36–45 mph)", "High-speed road (46+ mph)",
+                ], key="f_sb")
             with cd:
+                st.selectbox("Location", [
+                    "At or near an intersection", "Mid-block (no intersection)",
+                    "Driveway / parking access",
+                ], key="f_loc")
+            ce, cf = st.columns(2)
+            with ce:
+                st.selectbox("Surface", ["Dry", "Wet", "Other / Unknown"], key="f_sf")
+            with cf:
                 st.selectbox("Helmet", ["Yes", "No"], key="f_helmet")
 
-        # ---- 02 · Pace & calories (collapsed) ----
-        with st.expander("02 · Pace & calories", expanded=False):
+        # ---- 02 · Pace & calories — always visible, no expander chrome ----
+        st.markdown('<div class="acs-section-title">02 · Pace & calories</div>',
+                    unsafe_allow_html=True)
+        with st.container(border=True):
             pa, pb = st.columns(2)
             with pa:
                 pace = st.number_input("Pace (min/mi)", min_value=4.0, max_value=20.0,
@@ -986,74 +1001,16 @@ with tab_plan:
             ra, rb = st.columns(2)
             with ra:
                 st.markdown(
-                    f"<div class='acs-kpi'><div class='label'>Time</div>"
-                    f"<div class='num' style='font-size:1.3rem;'>{mm}:{ss:02d}</div></div>",
+                    f"<div class='acs-kpi' style='min-height:auto; padding:0.5rem 0.7rem;'>"
+                    f"<div class='label'>Time</div>"
+                    f"<div class='num' style='font-size:1.15rem;'>{mm}:{ss:02d}</div></div>",
                     unsafe_allow_html=True)
             with rb:
                 st.markdown(
-                    f"<div class='acs-kpi'><div class='label'>Calories</div>"
-                    f"<div class='num' style='font-size:1.3rem;'>{kcal:,}</div></div>",
+                    f"<div class='acs-kpi' style='min-height:auto; padding:0.5rem 0.7rem;'>"
+                    f"<div class='label'>Calories</div>"
+                    f"<div class='num' style='font-size:1.15rem;'>{kcal:,}</div></div>",
                     unsafe_allow_html=True)
-
-        # ---- 03 · Save & export (open) ----
-        with st.expander("03 · Save & export", expanded=True):
-            sv, ex = st.columns(2)
-            with sv:
-                if st.button("💾 Save ride", use_container_width=True,
-                             disabled=meters < 1, key="btn_save_ride"):
-                    if st.session_state.drawn_route:
-                        st.session_state.saved_rides.append({
-                            "name": f"Ride {len(st.session_state.saved_rides)+1}",
-                            "geojson": st.session_state.drawn_route,
-                            "distance_m": meters,
-                            "risk": st.session_state.current_risk,
-                        })
-                        st.success(f"Saved ride #{len(st.session_state.saved_rides)}")
-            with ex:
-                export = {
-                    "schema": "cyclesafe.streamlit.v1",
-                    "current_route": st.session_state.drawn_route,
-                    "current_risk": st.session_state.current_risk,
-                    "saved_rides": st.session_state.saved_rides,
-                }
-                st.download_button(
-                    "⬇ Export JSON",
-                    data=json.dumps(export, indent=2, default=str),
-                    file_name="cyclesafe_export.json",
-                    mime="application/json",
-                    use_container_width=True,
-                    key="btn_export_json",
-                )
-            if st.button("⨯ Clear current route", use_container_width=True,
-                         key="btn_clear_route"):
-                st.session_state.drawn_route = None
-                st.rerun()
-
-            # Real "View results" button — finds the Streamlit tab via JS
-            # (parent doc, since components are iframed) and clicks it.
-            saved_n = len(st.session_state.saved_rides)
-            view_label = (f"📊 View results ({saved_n} saved) →"
-                          if saved_n else "📊 View results →")
-            import streamlit.components.v1 as components
-            components.html(
-                f"""
-                <button id="view-results-jump"
-                        style="width:100%; padding: 8px 12px; margin-top: 8px;
-                               background: {PRIMARY}; color: white;
-                               border: 1px solid {PRIMARY}; border-radius: 6px;
-                               font-weight: 600; font-family: Inter, sans-serif;
-                               cursor: pointer;">
-                  {view_label}
-                </button>
-                <script>
-                  document.getElementById('view-results-jump').onclick = () => {{
-                    const tabs = window.parent.document.querySelectorAll('[role="tab"]');
-                    if (tabs.length >= 3) tabs[2].click();
-                  }};
-                </script>
-                """,
-                height=52,
-            )
 
     # =========================================================
     # Map column — fills the right 2/3 of the viewport
@@ -1077,10 +1034,22 @@ with tab_plan:
         import folium
         from folium.plugins import Draw
         from streamlit_folium import st_folium
+        from branca.element import MacroElement, Template
 
         center = [30.2672, -97.7431]
         m = folium.Map(location=center, zoom_start=14, control_scale=True,
                        tiles="OpenStreetMap")
+        # Inject CSS INTO the folium iframe — parent-app CSS can't reach there.
+        # Hides the Leaflet/OSM attribution badge on the rendered map.
+        _hide_attr = MacroElement()
+        _hide_attr._template = Template("""
+            {% macro html(this, kwargs) %}
+            <style>
+              .leaflet-control-attribution { display: none !important; }
+            </style>
+            {% endmacro %}
+        """)
+        m.get_root().add_child(_hide_attr)
         Draw(
             export=False,
             position="topleft",
@@ -1137,6 +1106,64 @@ with tab_plan:
             if new_route != st.session_state.drawn_route:
                 st.session_state.drawn_route = new_route
                 st.rerun()
+
+        # ===== Action bar — sits directly below the map =====
+        ab1, ab2, ab3, ab4 = st.columns(4)
+        with ab1:
+            if st.button("💾 Save ride", use_container_width=True,
+                         disabled=meters < 1, key="btn_save_ride"):
+                if st.session_state.drawn_route:
+                    st.session_state.saved_rides.append({
+                        "name": f"Ride {len(st.session_state.saved_rides)+1}",
+                        "geojson": st.session_state.drawn_route,
+                        "distance_m": meters,
+                        "risk": st.session_state.current_risk,
+                    })
+                    st.success(f"Saved ride #{len(st.session_state.saved_rides)}")
+        with ab2:
+            if st.button("⨯ Clear", use_container_width=True, key="btn_clear_route"):
+                st.session_state.drawn_route = None
+                st.rerun()
+        with ab3:
+            export = {
+                "schema": "cyclesafe.streamlit.v1",
+                "current_route": st.session_state.drawn_route,
+                "current_risk": st.session_state.current_risk,
+                "saved_rides": st.session_state.saved_rides,
+            }
+            st.download_button(
+                "⬇ Export JSON",
+                data=json.dumps(export, indent=2, default=str),
+                file_name="cyclesafe_export.json",
+                mime="application/json",
+                use_container_width=True,
+                key="btn_export_json",
+            )
+        with ab4:
+            saved_n = len(st.session_state.saved_rides)
+            view_label = (f"📊 Results ({saved_n}) →"
+                          if saved_n else "📊 Results →")
+            import streamlit.components.v1 as _comps_view
+            _comps_view.html(
+                f"""
+                <button id="view-results-jump-plan"
+                        style="width:100%; padding: 8px 12px;
+                               background: {PRIMARY}; color: white;
+                               border: 1px solid {PRIMARY}; border-radius: 6px;
+                               font-weight: 600; font-family: Inter, sans-serif;
+                               font-size: 0.85rem; cursor: pointer;
+                               white-space: nowrap;">
+                  {view_label}
+                </button>
+                <script>
+                  document.getElementById('view-results-jump-plan').onclick = () => {{
+                    const tabs = window.parent.document.querySelectorAll('[role="tab"]');
+                    if (tabs.length >= 3) tabs[2].click();
+                  }};
+                </script>
+                """,
+                height=42,
+            )
 
 
 # ============================================================
@@ -1217,12 +1244,12 @@ def _render_ride_card(title: str, geojson: dict | None, meters: float, risk: dic
                 var bounds = {bounds_json};
                 var map = L.map("{map_id}", {{
                   scrollWheelZoom: false, zoomControl: true,
-                  maxZoom: 17
+                  maxZoom: 17,
+                  attributionControl: false
                 }});
                 L.tileLayer(
                   "https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png",
-                  {{ attribution: "&copy; OpenStreetMap contributors",
-                     maxZoom: 19 }}
+                  {{ attribution: "", maxZoom: 19 }}
                 ).addTo(map);
                 L.polyline(coords, {{
                   color: "{PRIMARY}", weight: 5, opacity: 0.95
