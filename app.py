@@ -679,11 +679,22 @@ def _haversine_meters(a: tuple[float, float], b: tuple[float, float]) -> float:
     return float(2 * R * np.arcsin(np.sqrt(h)))
 
 
-def _route_distance_meters(geojson_feature: dict | None) -> float:
-    if not geojson_feature: return 0.0
+def _route_coords(geojson_feature: dict | None) -> list:
+    """Extract a flat [[lng, lat], ...] list from a LineString OR Polygon feature."""
+    if not geojson_feature: return []
     geom = geojson_feature.get("geometry", {})
-    if geom.get("type") != "LineString": return 0.0
-    coords = geom.get("coordinates", [])
+    gt = geom.get("type")
+    if gt == "LineString":
+        return list(geom.get("coordinates", []))
+    if gt == "Polygon":
+        # Outer ring only, since cyclists ride the perimeter
+        rings = geom.get("coordinates", [])
+        return list(rings[0]) if rings else []
+    return []
+
+
+def _route_distance_meters(geojson_feature: dict | None) -> float:
+    coords = _route_coords(geojson_feature)
     total = 0.0
     for i in range(1, len(coords)):
         # GeoJSON is [lng, lat]
@@ -815,79 +826,8 @@ with tab_plan:
             with cd:
                 st.selectbox("Helmet", ["Yes", "No"], key="f_helmet")
 
-        # ---- 02 · Why the dial moved (collapsed) ----
-        with st.expander("02 · Why the dial moved", expanded=False):
-            def _rate_for(pat, label):
-                hit = next((p for p in pat if p["label"] == label), None)
-                return (hit["rate"], hit["n"]) if hit else (0, 0)
-            rows = [
-                ("When you ride", st.session_state.f_tb,
-                 *_rate_for(agg["time_pattern"],     st.session_state.f_tb)),
-                ("Street type",   st.session_state.f_sb,
-                 *_rate_for(agg["speed_pattern"],    st.session_state.f_sb)),
-                ("Location",      st.session_state.f_loc,
-                 *_rate_for(agg["location_pattern"], st.session_state.f_loc)),
-                ("Surface",
-                 st.session_state.f_sf if st.session_state.f_sf in ("Dry", "Wet") else "—",
-                 *(_rate_for(agg["surface_pattern"], st.session_state.f_sf)
-                   if st.session_state.f_sf in ("Dry", "Wet") else (agg["baseline"], 0))),
-            ]
-            for name, val, rate, n in rows:
-                color = DANGER if rate > agg["baseline"] else SUCCESS
-                st.markdown(
-                    f"**{name}** · {val}  \n"
-                    f"<span style='color: {color}; font-weight: 600;'>{rate*100:.1f}%</span>"
-                    f" &nbsp;·&nbsp; <span style='color:{FG_MUTED}; font-size: 0.85rem;'>n={n:,}</span>",
-                    unsafe_allow_html=True,
-                )
-
-        # ---- 03 · Map & drawing (open) — explanation + how-snap-affects-risk ----
-        with st.expander("03 · Map & drawing", expanded=True):
-            st.markdown(
-                f"""
-                <div class="acs-mini-help">
-                  <b style="color: {PRIMARY_HOVER};">How to draw a route.</b><br>
-                  1. Click the <b>polyline icon</b> (top-left of the map).<br>
-                  2. <b>Click</b> on the map to place each point along your route.<br>
-                  3. <b>Double-click the last point</b> (or click <i>Finish</i> in the
-                     drawing toolbar) to end the line.<br>
-                  4. To close a loop, place your final point near the start, then double-click.<br><br>
-                  Distance is measured along the exact line you draw — no auto-correct.
-                  The <b>Street type</b> setting in <b>01 Conditions</b> is what drives the
-                  risk math; pick the road class that matches what you're drawing along.
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            st.markdown(
-                f"""
-                <div class="acs-rec calm" style="margin-top: 0.6rem; padding: 0.6rem 0.8rem;">
-                  <h4 style="font-size: 0.7rem;">How the snap affects your risk score</h4>
-                  <p style="font-size: 0.78rem; line-height: 1.5;">
-                    Calm 25 mph residentials run a ~7% serious-injury rate; 46+ mph arterials
-                    run ~19%. Draw along the streets you actually plan to ride, then make sure
-                    your <b>Street type</b> setting matches that road class — that's how the
-                    verdict gets right.
-                  </p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        # ---- 04 · Street search & AI route (collapsed, informational stub) ----
-        with st.expander("04 · Street search & AI route", expanded=False):
-            st.text_input("Search a street or landmark",
-                          placeholder='e.g. "Congress Ave" or "Zilker Park"',
-                          disabled=True, key="f_search")
-            sa, sb_btn = st.columns(2)
-            with sa:
-                st.button("+ Add waypoint", disabled=True, use_container_width=True)
-            with sb_btn:
-                st.button("🤖 AI route", disabled=True, use_container_width=True)
-            st.caption("Snap-to-road is intentionally off in this build — see section 03.")
-
-        # ---- 05 · Pace & calories (collapsed) ----
-        with st.expander("05 · Pace & calories", expanded=False):
+        # ---- 02 · Pace & calories (collapsed) ----
+        with st.expander("02 · Pace & calories", expanded=False):
             pa, pb = st.columns(2)
             with pa:
                 pace = st.number_input("Pace (min/mi)", min_value=4.0, max_value=20.0,
@@ -910,8 +850,8 @@ with tab_plan:
                     f"<div class='num' style='font-size:1.3rem;'>{kcal:,}</div></div>",
                     unsafe_allow_html=True)
 
-        # ---- 06 · Save & export (open) ----
-        with st.expander("06 · Save & export", expanded=True):
+        # ---- 03 · Save & export (open) ----
+        with st.expander("03 · Save & export", expanded=True):
             sv, ex = st.columns(2)
             with sv:
                 if st.button("💾 Save ride", use_container_width=True,
@@ -943,22 +883,54 @@ with tab_plan:
                          key="btn_clear_route"):
                 st.session_state.drawn_route = None
                 st.rerun()
+
+            # Real "View results" button — finds the Streamlit tab via JS
+            # (parent doc, since components are iframed) and clicks it.
             saved_n = len(st.session_state.saved_rides)
             view_label = (f"📊 View results ({saved_n} saved) →"
                           if saved_n else "📊 View results →")
-            st.markdown(
-                f"<div style='font-size: 0.78rem; color: {FG_MUTED}; "
-                f"margin-top: 0.4rem; line-height: 1.45;'>"
-                f"Click the <b>03 · Results</b> tab at the top to compare every "
-                f"saved ride side-by-side with its risk score and route map."
-                f"</div>",
-                unsafe_allow_html=True,
+            import streamlit.components.v1 as components
+            components.html(
+                f"""
+                <button id="view-results-jump"
+                        style="width:100%; padding: 8px 12px; margin-top: 8px;
+                               background: {PRIMARY}; color: white;
+                               border: 1px solid {PRIMARY}; border-radius: 6px;
+                               font-weight: 600; font-family: Inter, sans-serif;
+                               cursor: pointer;">
+                  {view_label}
+                </button>
+                <script>
+                  document.getElementById('view-results-jump').onclick = () => {{
+                    const tabs = window.parent.document.querySelectorAll('[role="tab"]');
+                    if (tabs.length >= 3) tabs[2].click();
+                  }};
+                </script>
+                """,
+                height=52,
             )
 
     # =========================================================
     # Map column — fills the right 2/3 of the viewport
     # =========================================================
     with mapcol:
+        # Brief drawing instructions right above the map
+        st.markdown(
+            f"""
+            <div style="background: {SURFACE}; border: 1px solid {BORDER};
+                        border-left: 3px solid {PRIMARY}; border-radius: 6px;
+                        padding: 8px 12px; margin-bottom: 8px; font-size: 0.82rem;
+                        color: {FG_MUTED}; line-height: 1.45;">
+              <b style="color:{FG};">How to draw:</b> click the
+              <b style="color:{PRIMARY};">polyline</b> icon (top-left of map) for an
+              open path — <i>double-click last point to finish</i>. Or click the
+              <b style="color:{PRIMARY};">polygon</b> icon for a closed loop —
+              <i>click your start point to close it</i>.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
         import folium
         from folium.plugins import Draw
         from streamlit_folium import st_folium
@@ -972,18 +944,22 @@ with tab_plan:
             draw_options={
                 "polyline": {"shapeOptions": {"color": PRIMARY, "weight": 5,
                                               "opacity": 0.95}},
-                "polygon": False, "circle": False, "rectangle": False,
+                # Polygon mode lets the user close a loop by clicking the start point
+                "polygon": {"shapeOptions": {"color": PRIMARY, "weight": 5,
+                                             "opacity": 0.95, "fillColor": PRIMARY,
+                                             "fillOpacity": 0.10}},
+                "circle": False, "rectangle": False,
                 "marker": False, "circlemarker": False,
             },
             edit_options={"edit": True, "remove": True},
         ).add_to(m)
-        if st.session_state.drawn_route:
-            geom = st.session_state.drawn_route.get("geometry", {})
-            if geom.get("type") == "LineString":
-                folium.PolyLine(
-                    [[c[1], c[0]] for c in geom["coordinates"]],
-                    color=PRIMARY, weight=5, opacity=0.95,
-                ).add_to(m)
+        # Re-render the user's drawn route after Streamlit reruns
+        _persist_coords = _route_coords(st.session_state.drawn_route)
+        if _persist_coords:
+            folium.PolyLine(
+                [[c[1], c[0]] for c in _persist_coords],
+                color=PRIMARY, weight=5, opacity=0.95,
+            ).add_to(m)
         out = st_folium(m, height=720, width=None,
                         returned_objects=["last_active_drawing"], key="plan_map")
         if out and out.get("last_active_drawing"):
@@ -1026,23 +1002,38 @@ def _render_ride_card(title: str, geojson: dict | None, meters: float, risk: dic
     )
     map_col, sum_col = st.columns([1, 1])
     with map_col:
-        coords = geojson.get("geometry", {}).get("coordinates", []) if geojson else []
+        coords = _route_coords(geojson)
         if coords:
+            import math as _math
             lats = [c[1] for c in coords]; lngs = [c[0] for c in coords]
-            # Build the map with NO initial zoom_start — that way fit_bounds is the
-            # only thing setting the view, and Leaflet picks the right zoom for the
-            # bounding box automatically.
-            sw = [min(lats), min(lngs)]; ne = [max(lats), max(lngs)]
-            # Pad the box slightly so the polyline isn't flush against the map edge.
-            lat_pad = max((max(lats) - min(lats)) * 0.10, 0.0008)
-            lng_pad = max((max(lngs) - min(lngs)) * 0.10, 0.0008)
-            sw_p = [sw[0] - lat_pad, sw[1] - lng_pad]
-            ne_p = [ne[0] + lat_pad, ne[1] + lng_pad]
-            m = folium.Map(tiles="OpenStreetMap",
+            sw_lat, ne_lat = min(lats), max(lats)
+            sw_lng, ne_lng = min(lngs), max(lngs)
+            center = [(sw_lat + ne_lat) / 2, (sw_lng + ne_lng) / 2]
+
+            # Web Mercator zoom calc — picks the highest zoom that fits the bbox
+            # in the rendered map size. Belt-and-braces because folium/streamlit
+            # sometimes drops the fit_bounds JS call on the small mini-map.
+            def _calc_zoom(s_lat, s_lng, n_lat, n_lng, w_px=460, h_px=300):
+                WORLD_DIM = 256
+                def _y(lat, z):
+                    s = _math.sin(_math.radians(lat))
+                    s = max(min(s, 0.9999), -0.9999)
+                    return (0.5 - _math.log((1+s)/(1-s)) / (4*_math.pi)) * (WORLD_DIM * 2**z)
+                def _x(lng, z):
+                    return (lng + 180) / 360 * (WORLD_DIM * 2**z)
+                for z in range(18, 1, -1):
+                    w = abs(_x(n_lng, z) - _x(s_lng, z))
+                    h = abs(_y(s_lat, z) - _y(n_lat, z))
+                    if w <= w_px and h <= h_px:
+                        return z
+                return 2
+
+            zoom = _calc_zoom(sw_lat, sw_lng, ne_lat, ne_lng)
+            m = folium.Map(location=center, zoom_start=zoom,
+                           tiles="OpenStreetMap",
                            zoom_control=True, scrollWheelZoom=False)
             folium.PolyLine([[c[1], c[0]] for c in coords],
                             color=PRIMARY, weight=5, opacity=0.95).add_to(m)
-            # Mark start (green) and end (red) so the user knows direction.
             folium.CircleMarker([coords[0][1], coords[0][0]], radius=6,
                                 color="white", weight=2, fill=True,
                                 fill_color=SUCCESS, fill_opacity=1.0,
@@ -1051,7 +1042,11 @@ def _render_ride_card(title: str, geojson: dict | None, meters: float, risk: dic
                                 color="white", weight=2, fill=True,
                                 fill_color=DANGER, fill_opacity=1.0,
                                 tooltip="End").add_to(m)
-            m.fit_bounds([sw_p, ne_p])
+            # Pad bounds slightly so the line isn't flush against the edge.
+            lat_pad = max((ne_lat - sw_lat) * 0.10, 0.0008)
+            lng_pad = max((ne_lng - sw_lng) * 0.10, 0.0008)
+            m.fit_bounds([[sw_lat - lat_pad, sw_lng - lng_pad],
+                          [ne_lat + lat_pad, ne_lng + lng_pad]])
             st_folium(m, height=320, width=None, returned_objects=[],
                       key=f"results_map_{title}")
         else:
