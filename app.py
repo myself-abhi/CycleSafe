@@ -69,12 +69,11 @@ def layout_budget(viewport_h: int) -> dict[str, int]:
     GAPS  = 28    # ~12 px between each of 3 rows
     available = max(540, viewport_h - FIXED - GAPS)
 
-    # Per-row ratios. Decision row hugs its content (badge + headline + KPI
-    # strip) so there's no dead band below the cards. Pattern row gets the
-    # most space for its small-multiples grid.
-    decision_card = max(200, int(available * 0.22))   # 3 cards same height
-    pattern_card  = max(310, int(available * 0.44))   # 2 cards same height
-    drivers_card  = max(220, int(available * 0.30))   # 4 cards same height
+    # Per-row ratios — decision row needs more height for verdict + KPI strip,
+    # pattern row gets most space for its small-multiples grid + curve.
+    decision_card = max(260, int(available * 0.30))   # 3 cards same height
+    pattern_card  = max(310, int(available * 0.40))   # 2 cards same height
+    drivers_card  = max(220, int(available * 0.27))   # 4 cards same height
 
     # Plotly font sizes scale with viewport — small screens get smaller
     # axis labels, large screens get bigger. Stays within readable bounds.
