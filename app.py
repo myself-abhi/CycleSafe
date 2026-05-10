@@ -226,9 +226,11 @@ st.markdown(
   div[data-testid="stVerticalBlock"] {{ gap: 0.55rem !important; }}
   div[data-testid="stHorizontalBlock"] {{ gap: 0.6rem !important; }}
 
-  /* Responsive map height — adapts to viewport on the Plan tab */
+  /* Responsive map height — fills the Plan tab vertical space.
+     Now that the action bar sits OUTSIDE the map column (full-width below
+     both columns), the map can grow to fill the right column entirely. */
   iframe[title^="streamlit_folium"] {{
-    height: clamp(520px, 72vh, 760px) !important;
+    height: clamp(640px, 80vh, 900px) !important;
     margin-bottom: 0 !important;
     display: block;
   }}
@@ -310,15 +312,15 @@ st.markdown(
   /* Wrap every Plotly chart in a clean white card. Tight padding so the
      chart fills the card with no dead whitespace around the title or below
      the axis labels. All four cards locked to the same height for a clean
-     2x2 grid. */
+     2x2 grid. Compact 250px so the full Home tab fits in viewport. */
   div[data-testid="stPlotlyChart"] {{
     background: {SURFACE};
     border: 1px solid {BORDER};
     border-radius: 10px;
     padding: 4px 6px 2px 6px;
     box-shadow: 0 1px 2px rgba(17,24,39,0.04), 0 1px 4px rgba(17,24,39,0.03);
-    margin-bottom: 10px;
-    height: 310px;
+    margin-bottom: 8px;
+    height: 250px;
     box-sizing: border-box;
   }}
   /* Reset the inner wrapper so styles don't double-apply */
@@ -626,21 +628,22 @@ def _baseline_shape(baseline_pct: float, x0=0, x1=1, axis="y"):
     )
 
 
-def _chart_layout(title: str, height: int = 300) -> dict:
-    """Uniform chart layout. Card is 320px, chart 300px → all 4 same size.
+def _chart_layout(title: str, height: int = 240) -> dict:
+    """Uniform chart layout. Card is 250px, chart 240px → all 4 same size.
     Tight top margin pulls the plot area up close under the title — kills
     the dead whitespace between heading and the first gridline.
     """
     return dict(
-        title=dict(text=title, font=dict(size=13, color=FG, family="Inter"),
+        title=dict(text=title, font=dict(size=12, color=FG, family="Inter"),
                    x=0, xanchor="left", y=0.985, yanchor="top",
                    pad=dict(t=0, b=0)),
-        # Tightened top margin (42→26) and bottom margin kept generous so
-        # x-axis category labels never clip.
-        margin=dict(l=44, r=20, t=26, b=44),
+        # Tightened margins so all 4 chart bodies have ~150px of plot area
+        # within a 240px Plotly canvas — title stays readable, axis labels
+        # never clip, and the 2x2 grid fits in viewport without scrolling.
+        margin=dict(l=42, r=18, t=24, b=40),
         paper_bgcolor=SURFACE, plot_bgcolor=SURFACE,
         height=height, autosize=False, showlegend=False,
-        font=dict(family="Inter", size=10, color=FG_MUTED),
+        font=dict(family="Inter", size=9, color=FG_MUTED),
         hoverlabel=dict(bgcolor=FG, font=dict(color="white", family="Inter")),
     )
 
@@ -1070,41 +1073,6 @@ with tab_plan:
                     f"<div class='num' style='font-size:1.15rem;'>{kcal:,}</div></div>",
                     unsafe_allow_html=True)
 
-        # ---- 03 · Saved rides — quick-list, fills the sidebar bottom ----
-        st.markdown('<div class="acs-section-title">03 · Saved rides</div>',
-                    unsafe_allow_html=True)
-        with st.container(border=True):
-            saved_list = st.session_state.saved_rides
-            if not saved_list:
-                st.markdown(
-                    f"<div style='font-size: 0.78rem; color: {FG_MUTED}; "
-                    f"line-height: 1.5;'>No rides saved yet. Draw a route on the map "
-                    f"and click <b style='color:{FG};'>💾 Save ride</b> to add it here. "
-                    f"Compare alternate routes side-by-side on the Results tab.</div>",
-                    unsafe_allow_html=True,
-                )
-            else:
-                for i, r in enumerate(saved_list, 1):
-                    r_meters = r.get("distance_m", 0)
-                    r_miles = r_meters / 1609.344 if r_meters else 0
-                    r_risk = r.get("risk", {}) or {}
-                    r_band = r_risk.get("band", "calm")
-                    pill_color = {"calm": SUCCESS, "caution": PRIMARY,
-                                  "danger": DANGER}.get(r_band, FG_MUTED)
-                    st.markdown(
-                        f"<div style='display:flex; justify-content:space-between; "
-                        f"align-items:center; padding: 5px 0; "
-                        f"border-bottom: 1px solid {BORDER}; font-size: 0.82rem;'>"
-                        f"<span><b>{r.get('name', f'Ride {i}')}</b> "
-                        f"<span style='color:{FG_MUTED}; font-size: 0.76rem;'>"
-                        f"· {r_miles:.2f} mi</span></span>"
-                        f"<span style='display:inline-block; width:10px; height:10px; "
-                        f"border-radius:999px; background:{pill_color};' "
-                        f"title='{r_risk.get('band_label', '—')}'></span>"
-                        f"</div>",
-                        unsafe_allow_html=True,
-                    )
-
     # =========================================================
     # Map column — fills the right 2/3 of the viewport
     # =========================================================
@@ -1202,70 +1170,72 @@ with tab_plan:
                 st.session_state.drawn_route = new_route
                 st.rerun()
 
-        # ===== Action bar — sits directly below the map =====
-        ab1, ab2, ab3, ab4 = st.columns(4)
-        with ab1:
-            if st.button("💾 Save ride", use_container_width=True,
-                         disabled=meters < 1, key="btn_save_ride"):
-                if st.session_state.drawn_route:
-                    st.session_state.saved_rides.append({
-                        "name": f"Ride {len(st.session_state.saved_rides)+1}",
-                        "geojson": st.session_state.drawn_route,
-                        "distance_m": meters,
-                        "risk": st.session_state.current_risk,
-                    })
-                    st.success(f"Saved ride #{len(st.session_state.saved_rides)}")
-        with ab2:
-            if st.button("⨯ Clear", use_container_width=True, key="btn_clear_route"):
-                st.session_state.drawn_route = None
-                st.rerun()
-        with ab3:
-            export = {
-                "schema": "cyclesafe.streamlit.v1",
-                "current_route": st.session_state.drawn_route,
-                "current_risk": st.session_state.current_risk,
-                "saved_rides": st.session_state.saved_rides,
-            }
-            st.download_button(
-                "⬇ Export JSON",
-                data=json.dumps(export, indent=2, default=str),
-                file_name="cyclesafe_export.json",
-                mime="application/json",
-                use_container_width=True,
-                key="btn_export_json",
-            )
-        with ab4:
-            saved_n = len(st.session_state.saved_rides)
-            view_label = (f"📊 Results ({saved_n}) →"
-                          if saved_n else "📊 Results →")
-            import streamlit.components.v1 as _comps_view
-            # Match the Streamlit button heights (40px) + add 4px buffer for the
-            # iframe so it lines up perfectly with Save/Clear/Export.
-            _comps_view.html(
-                f"""
-                <html><body style="margin:0;padding:0;">
-                <button id="view-results-jump-plan"
-                        style="width:100%; height: 40px; padding: 0 12px;
-                               background: {PRIMARY}; color: white;
-                               border: 1px solid {PRIMARY}; border-radius: 6px;
-                               font-weight: 600; font-family: Inter, sans-serif;
-                               font-size: 0.92rem; cursor: pointer;
-                               white-space: nowrap;
-                               transition: background 140ms ease;"
-                        onmouseover="this.style.background='{PRIMARY_HOVER}';"
-                        onmouseout="this.style.background='{PRIMARY}';">
-                  {view_label}
-                </button>
-                <script>
-                  document.getElementById('view-results-jump-plan').onclick = () => {{
-                    const tabs = window.parent.document.querySelectorAll('[role="tab"]');
-                    if (tabs.length >= 3) tabs[2].click();
-                  }};
-                </script>
-                </body></html>
-                """,
-                height=44,
-            )
+    # =========================================================
+    # FULL-WIDTH action bar — sits below both sidebar AND map column
+    # =========================================================
+    st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+    ab1, ab2, ab3, ab4 = st.columns(4)
+    with ab1:
+        if st.button("💾 Save ride", use_container_width=True,
+                     disabled=meters < 1, key="btn_save_ride"):
+            if st.session_state.drawn_route:
+                st.session_state.saved_rides.append({
+                    "name": f"Ride {len(st.session_state.saved_rides)+1}",
+                    "geojson": st.session_state.drawn_route,
+                    "distance_m": meters,
+                    "risk": st.session_state.current_risk,
+                })
+                # Toast-style note that auto-disappears, instead of persistent banner
+                st.toast(f"Saved ride #{len(st.session_state.saved_rides)}", icon="💾")
+    with ab2:
+        if st.button("⨯ Clear", use_container_width=True, key="btn_clear_route"):
+            st.session_state.drawn_route = None
+            st.rerun()
+    with ab3:
+        export = {
+            "schema": "cyclesafe.streamlit.v1",
+            "current_route": st.session_state.drawn_route,
+            "current_risk": st.session_state.current_risk,
+            "saved_rides": st.session_state.saved_rides,
+        }
+        st.download_button(
+            "⬇ Export JSON",
+            data=json.dumps(export, indent=2, default=str),
+            file_name="cyclesafe_export.json",
+            mime="application/json",
+            use_container_width=True,
+            key="btn_export_json",
+        )
+    with ab4:
+        saved_n = len(st.session_state.saved_rides)
+        view_label = (f"📊 Results ({saved_n}) →"
+                      if saved_n else "📊 Results →")
+        import streamlit.components.v1 as _comps_view
+        _comps_view.html(
+            f"""
+            <html><body style="margin:0;padding:0;">
+            <button id="view-results-jump-plan"
+                    style="width:100%; height: 40px; padding: 0 12px;
+                           background: {PRIMARY}; color: white;
+                           border: 1px solid {PRIMARY}; border-radius: 6px;
+                           font-weight: 600; font-family: Inter, sans-serif;
+                           font-size: 0.92rem; cursor: pointer;
+                           white-space: nowrap;
+                           transition: background 140ms ease;"
+                    onmouseover="this.style.background='{PRIMARY_HOVER}';"
+                    onmouseout="this.style.background='{PRIMARY}';">
+              {view_label}
+            </button>
+            <script>
+              document.getElementById('view-results-jump-plan').onclick = () => {{
+                const tabs = window.parent.document.querySelectorAll('[role="tab"]');
+                if (tabs.length >= 3) tabs[2].click();
+              }};
+            </script>
+            </body></html>
+            """,
+            height=44,
+        )
 
 
 # ============================================================
@@ -1381,29 +1351,34 @@ def _render_ride_card(title: str, geojson: dict | None, meters: float, risk: dic
             </script>
             """
             components.html(html, height=map_height + 4)
-
-            # Compact { } toggle directly under the map for THIS ride's JSON
-            with st.expander("{ } JSON", expanded=False):
-                st.json({
-                    "title": title,
-                    "distance_m": meters,
-                    "distance_mi": round(miles, 3),
-                    "risk": risk,
-                    "geojson": geojson,
-                })
         else:
             st.info("No route drawn for this ride yet.")
     with sum_col:
+        # Build a unique modal ID per ride so multiple cards on Results don't collide
+        ride_json = json.dumps({
+            "title": title,
+            "distance_m": meters,
+            "distance_mi": round(miles, 3),
+            "risk": risk,
+            "geojson": geojson,
+        }, indent=2, default=str)
+        ride_json_html = (ride_json
+                          .replace("&", "&amp;")
+                          .replace("<", "&lt;")
+                          .replace(">", "&gt;"))
+        modal_id = f"jm-{abs(hash(title + ride_json)) % 1000000}"
+
         # Single cohesive dark panel — fills the full map height (320px) so the
-        # right side aligns flush with the map on the left. All info lives
-        # inside, no orphan plain-text rows on the page background.
+        # right side aligns flush with the map on the left. The { } JSON button
+        # sits absolutely positioned in the bottom-right corner.
         st.markdown(
             f"""
             <div class="acs-hero" style="padding: 1.1rem 1.3rem;
                                           height: 320px; border-radius: 0 0 8px 0;
                                           margin: 0; box-shadow: none;
                                           display: flex; flex-direction: column;
-                                          justify-content: space-between; gap: 0.8rem;">
+                                          justify-content: space-between; gap: 0.8rem;
+                                          position: relative;">
               <div>
                 <span style="font-size: 0.68rem; font-weight: 600; letter-spacing: 0.10em;
                              text-transform: uppercase; color: rgba(255,255,255,0.85);">
@@ -1425,6 +1400,43 @@ def _render_ride_card(title: str, geojson: dict | None, meters: float, risk: dic
                 <div><b>Street:</b> {inputs.get('sb', '—')}</div>
                 <div><b>Location:</b> {inputs.get('loc', '—')}</div>
                 <div><b>Helmet:</b> {inputs.get('helmet', '—')}</div>
+              </div>
+              <button title="Show JSON"
+                      onclick="document.getElementById('{modal_id}').style.display='flex';"
+                      style="position: absolute; bottom: 10px; right: 12px;
+                             width: 32px; height: 28px;
+                             background: rgba(255,255,255,0.10); color: white;
+                             border: 1px solid rgba(255,255,255,0.25);
+                             border-radius: 5px; cursor: pointer;
+                             font-family: 'Courier New', monospace; font-size: 0.95rem;
+                             line-height: 1; padding: 0;
+                             transition: background 140ms ease;"
+                      onmouseover="this.style.background='rgba(255,255,255,0.20)';"
+                      onmouseout="this.style.background='rgba(255,255,255,0.10)';">
+                {{ }}
+              </button>
+            </div>
+            <div id="{modal_id}"
+                 style="display:none; position: fixed; inset: 0;
+                        background: rgba(17,24,39,0.55); z-index: 9999;
+                        align-items: center; justify-content: center;"
+                 onclick="if(event.target===this) this.style.display='none';">
+              <div style="background: white; border-radius: 10px; padding: 18px 20px;
+                          max-width: 720px; max-height: 80vh; width: 90%;
+                          overflow: auto; box-shadow: 0 20px 50px rgba(0,0,0,0.25);
+                          font-family: Inter, sans-serif;">
+                <div style="display:flex; justify-content:space-between;
+                            align-items:center; margin-bottom: 10px;">
+                  <span style="font-weight:600; color:{FG}; font-size: 0.92rem;">
+                    {title} · JSON
+                  </span>
+                  <button onclick="document.getElementById('{modal_id}').style.display='none';"
+                          style="background: transparent; border: 0; cursor: pointer;
+                                 font-size: 1.5rem; color: {FG_MUTED}; line-height: 1;">×</button>
+                </div>
+                <pre style="font-family:'Courier New', monospace; font-size: 0.78rem;
+                            line-height: 1.5; color: {FG}; white-space: pre-wrap;
+                            word-break: break-word; margin: 0;">{ride_json_html}</pre>
               </div>
             </div>
             """,
