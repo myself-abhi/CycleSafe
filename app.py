@@ -217,6 +217,54 @@ st.markdown(
   }}
   .stButton > button:hover {{ background: {PRIMARY_HOVER}; border-color: {PRIMARY_HOVER}; }}
 
+  /* Hide Leaflet.Draw's edit + remove toolbar (clear-route lives in sidebar) */
+  .leaflet-draw-edit-edit, .leaflet-draw-edit-remove {{ display: none !important; }}
+  .leaflet-draw-section:nth-child(2) {{ display: none !important; }}
+
+  /* ===== Modern polish: shadows, hover, chart cards ===== */
+  /* KPI cards lift slightly on hover */
+  .acs-kpi {{
+    box-shadow: 0 1px 2px rgba(17,24,39,0.04), 0 1px 4px rgba(17,24,39,0.03);
+    transition: transform 160ms ease, box-shadow 160ms ease;
+  }}
+  .acs-kpi:hover {{
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(17,24,39,0.08), 0 4px 12px rgba(17,24,39,0.04);
+  }}
+  .acs-insight {{
+    box-shadow: 0 1px 2px rgba(17,24,39,0.04);
+    transition: transform 160ms ease, box-shadow 160ms ease;
+  }}
+  .acs-insight:hover {{
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(17,24,39,0.08), 0 4px 12px rgba(17,24,39,0.04);
+  }}
+  /* Wrap every Plotly chart in a clean white card with subtle shadow */
+  div[data-testid="stPlotlyChart"] > div {{
+    background: {SURFACE};
+    border: 1px solid {BORDER};
+    border-radius: 10px;
+    padding: 14px 16px 10px 16px;
+    box-shadow: 0 1px 2px rgba(17,24,39,0.04), 0 1px 4px rgba(17,24,39,0.03);
+  }}
+  /* Acrylic shadow on the dark hero card */
+  .acs-hero {{
+    box-shadow: 0 4px 12px rgba(17,24,39,0.10), 0 1px 3px rgba(17,24,39,0.06);
+  }}
+
+  /* Bottom CTA row on Home — "NEXT: ... Check my ride →" */
+  .acs-next-row {{
+    display: flex; justify-content: space-between; align-items: center;
+    margin-top: 16px; padding: 12px 16px;
+    background: {SURFACE}; border: 1px solid {BORDER}; border-radius: 10px;
+    box-shadow: 0 1px 2px rgba(17,24,39,0.04);
+  }}
+  .acs-next-row .next-text {{ font-size: 0.92rem; color: {FG_MUTED}; }}
+  .acs-next-row .next-text b {{
+    color: {PRIMARY}; text-transform: uppercase; letter-spacing: 0.1em;
+    font-size: 0.72rem; margin-right: 6px;
+  }}
+
   /* Numbered accordion (mirrors HTML <details class="acc-panel">) */
   div[data-testid="stExpander"] {{
     border: 1px solid {BORDER}; border-radius: 8px; background: {SURFACE};
@@ -656,6 +704,102 @@ with tab_home:
                 unsafe_allow_html=True,
             )
 
+    # Bottom CTA row — mirrors HTML "NEXT: about to ride? ... Check my ride →"
+    # The button + { } JSON toggle are real DOM elements (via components.html),
+    # so they can click the Plan tab in the parent doc.
+    import streamlit.components.v1 as _components
+    _full_export = json.dumps({
+        "schema": "cyclesafe.streamlit.v1",
+        "total_crashes": D["total"],
+        "baseline_serious_rate": D["baseline"],
+        "killed": D["killed"],
+        "year_range": f"{D['year_min']}-{D['year_max']}",
+        "patterns": {
+            "time": D["time_pattern"], "speed": D["speed_pattern"],
+            "location": D["location_pattern"], "surface": D["surface_pattern"],
+        },
+    }, indent=2, default=str).replace("</", "<\\/")
+    _components.html(
+        f"""
+        <style>
+          .acs-cta-row {{
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 12px 16px; margin-top: 4px;
+            background: #FFFFFF; border: 1px solid {BORDER}; border-radius: 10px;
+            box-shadow: 0 1px 2px rgba(17,24,39,0.04);
+            font-family: Inter, system-ui, sans-serif;
+          }}
+          .acs-cta-row .next {{
+            font-size: 0.92rem; color: {FG_MUTED};
+          }}
+          .acs-cta-row .next b {{
+            color: {PRIMARY}; text-transform: uppercase; letter-spacing: 0.1em;
+            font-size: 0.72rem; margin-right: 6px;
+          }}
+          .acs-cta-actions {{ display: flex; gap: 8px; align-items: center; }}
+          .acs-cta-primary {{
+            background: {PRIMARY}; color: white; border: 1px solid {PRIMARY};
+            font-weight: 600; padding: 9px 16px; border-radius: 6px;
+            cursor: pointer; font-family: Inter, sans-serif; font-size: 0.92rem;
+            transition: background 140ms ease;
+          }}
+          .acs-cta-primary:hover {{ background: {PRIMARY_HOVER}; }}
+          .acs-cta-icon {{
+            background: white; color: {FG};
+            border: 1px solid {BORDER}; border-radius: 6px;
+            width: 38px; height: 38px; cursor: pointer;
+            font-family: 'Courier New', monospace; font-size: 1rem;
+            transition: background 140ms ease;
+          }}
+          .acs-cta-icon:hover {{ background: #F5F5F4; }}
+          .acs-json-modal {{
+            position: fixed; inset: 0; background: rgba(17,24,39,0.45);
+            display: none; align-items: center; justify-content: center;
+            z-index: 9999; font-family: Inter, sans-serif;
+          }}
+          .acs-json-modal.open {{ display: flex; }}
+          .acs-json-modal .panel {{
+            background: white; border-radius: 10px; padding: 18px 20px;
+            max-width: 760px; max-height: 80vh; width: 90%;
+            overflow: auto; box-shadow: 0 20px 50px rgba(0,0,0,0.25);
+          }}
+          .acs-json-modal pre {{
+            font-family: 'Courier New', monospace; font-size: 0.78rem;
+            line-height: 1.5; color: {FG}; white-space: pre-wrap;
+            word-break: break-word;
+          }}
+          .acs-json-modal .close {{
+            float: right; cursor: pointer; background: transparent;
+            border: 0; font-size: 1.4rem; color: {FG_MUTED};
+          }}
+        </style>
+        <div class="acs-cta-row">
+          <div class="next"><b>Next:</b> about to ride? Let the app check it for you.</div>
+          <div class="acs-cta-actions">
+            <button class="acs-cta-icon" id="acs-show-json" title="Show full JSON">{{ }}</button>
+            <button class="acs-cta-primary" id="acs-check-my-ride">Check my ride →</button>
+          </div>
+        </div>
+        <div class="acs-json-modal" id="acs-json-modal">
+          <div class="panel">
+            <button class="close" id="acs-json-close">×</button>
+            <pre>{_full_export}</pre>
+          </div>
+        </div>
+        <script>
+          document.getElementById('acs-check-my-ride').onclick = () => {{
+            const tabs = window.parent.document.querySelectorAll('[role="tab"]');
+            if (tabs.length >= 2) tabs[1].click();
+          }};
+          const modal = document.getElementById('acs-json-modal');
+          document.getElementById('acs-show-json').onclick = () => modal.classList.add('open');
+          document.getElementById('acs-json-close').onclick = () => modal.classList.remove('open');
+          modal.onclick = (e) => {{ if (e.target === modal) modal.classList.remove('open'); }};
+        </script>
+        """,
+        height=72,
+    )
+
 
 # ============================================================
 # TAB 2 — PLAN YOUR RIDE
@@ -951,7 +1095,10 @@ with tab_plan:
                 "circle": False, "rectangle": False,
                 "marker": False, "circlemarker": False,
             },
-            edit_options={"edit": True, "remove": True},
+            # Hide the edit + delete tool buttons; "Clear current route" in the
+            # sidebar handles route removal, and edit-after-the-fact isn't
+            # needed (just redraw if it's wrong).
+            edit_options={"edit": False, "remove": False},
         ).add_to(m)
         # Re-render the user's drawn route after Streamlit reruns. Polygons get
         # a translucent fill so they keep the same look as during drawing;
@@ -1144,7 +1291,34 @@ def _render_ride_card(title: str, geojson: dict | None, meters: float, risk: dic
 # TAB 3 — RESULTS
 # ============================================================
 with tab_results:
-    st.markdown('<p class="acs-kicker">Your rides at a glance</p>', unsafe_allow_html=True)
+    # Header row — kicker on the left, "Back to Plan" jump-button on the right.
+    # The button uses parent-doc DOM access to click the Plan tab (index 1).
+    import streamlit.components.v1 as _components
+    _hdr_l, _hdr_r = st.columns([3, 1])
+    with _hdr_l:
+        st.markdown('<p class="acs-kicker">Your rides at a glance</p>',
+                    unsafe_allow_html=True)
+    with _hdr_r:
+        _components.html(
+            f"""
+            <button id="back-to-plan-jump"
+                    style="width:100%; padding: 7px 12px; margin-top: 2px;
+                           background: white; color: {FG};
+                           border: 1px solid {BORDER}; border-radius: 6px;
+                           font-weight: 600; font-family: Inter, sans-serif;
+                           font-size: 0.85rem; cursor: pointer;">
+              ← Back to Plan
+            </button>
+            <script>
+              document.getElementById('back-to-plan-jump').onclick = () => {{
+                const tabs = window.parent.document.querySelectorAll('[role="tab"]');
+                if (tabs.length >= 2) tabs[1].click();
+              }};
+            </script>
+            """,
+            height=44,
+        )
+
     saved = st.session_state.saved_rides
     if not saved and not st.session_state.drawn_route:
         st.markdown(
