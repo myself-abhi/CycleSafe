@@ -87,7 +87,7 @@ def inject_css() -> None:
         overflow: hidden !important;
       }}
       .stMainBlockContainer, .block-container {{
-        padding: clamp(0.5rem, 1.2vw, 0.85rem) clamp(0.75rem, 2vw, 1.75rem) 0.65rem !important;
+        padding: 0.5rem clamp(0.75rem, 2vw, 1.5rem) 0.4rem !important;
         max-width: 1600px !important;
         margin: 0 auto !important;
         height: 100vh !important;
@@ -98,9 +98,9 @@ def inject_css() -> None:
       /* ============== BRAND BAR ============== */
       .brand-row {{
         display: flex; align-items: center; gap: 0.7rem;
-        padding: 0.2rem 0 0.65rem 0;
+        padding: 0.1rem 0 0.4rem 0;
         border-bottom: 1px solid {LINE};
-        margin-bottom: 0.7rem;
+        margin-bottom: 0.4rem;
         flex-wrap: wrap;
       }}
       .brand-icon {{
@@ -159,42 +159,32 @@ def inject_css() -> None:
         border: 1px solid {LINE} !important;
         border-radius: 14px !important;
         padding: clamp(0.75rem, 1.2vw, 1.1rem) clamp(0.9rem, 1.5vw, 1.3rem) !important;
-        height: 100%;
         transition: background 220ms ease, border-color 220ms ease, color 220ms ease;
       }}
 
       /* ============== EQUAL-HEIGHT 4-PANEL LAYOUT (≥ 901px) ============== */
-      /* Each panel gets an explicit height: half of the viewport minus
-         the brand bar + filter strip + paddings. This sidesteps the
-         fragile flex chain through Streamlit's nested wrappers. */
+      /* Hardcoded vh values — no variables, no calc, no flex chain.
+         Each panel = 41vh, two rows = 82vh, leaving 18vh for brand,
+         filters, and paddings. Boosted specificity with `body .stApp`
+         to override Streamlit's emotion-cache classes. */
       @media (min-width: 901px) {{
-        :root {{
-          --brand-h:  52px;
-          --filter-h: 76px;
-          --gaps:     34px;   /* paddings, row gap, breathing room */
-          --panel-h:  calc((100vh - var(--brand-h) - var(--filter-h) - var(--gaps)) / 2);
-        }}
-
-        /* Top-level vertical block uses the full viewport height */
-        .stMainBlockContainer > [data-testid="stVerticalBlock"],
-        .block-container > [data-testid="stVerticalBlock"] {{
-          height: 100% !important;
-          gap: 0.5rem !important;
-        }}
-
-        /* Every bordered panel pinned to exactly half the leftover space */
-        [data-testid="stVerticalBlockBorderWrapper"] {{
-          height: var(--panel-h) !important;
-          min-height: var(--panel-h) !important;
-          max-height: var(--panel-h) !important;
+        /* Panels: locked to a fixed fraction of viewport height.
+           42vh × 2 rows = 84vh, leaving 16vh for brand + filter + paddings. */
+        body .stApp [data-testid="stVerticalBlockBorderWrapper"] {{
+          height: 42vh !important;
+          min-height: 42vh !important;
+          max-height: 42vh !important;
           overflow: hidden !important;
           display: flex !important;
           flex-direction: column !important;
+          box-sizing: border-box !important;
         }}
 
-        /* Inner stack inside each panel uses flex column */
-        [data-testid="stVerticalBlockBorderWrapper"] > [data-testid="stVerticalBlock"] {{
+        /* Force the inner block inside the panel to stretch + flex column */
+        body .stApp [data-testid="stVerticalBlockBorderWrapper"]
+          [data-testid="stVerticalBlock"] {{
           flex: 1 1 auto !important;
+          height: 100% !important;
           min-height: 0 !important;
           display: flex !important;
           flex-direction: column !important;
@@ -202,10 +192,15 @@ def inject_css() -> None:
           overflow: hidden !important;
         }}
 
-        /* Make the panel rows hug their content vertically */
-        [data-testid="stHorizontalBlock"] {{
+        /* Force columns to stretch and have proper height context */
+        body .stApp [data-testid="stHorizontalBlock"] {{
           align-items: stretch !important;
           margin-bottom: 0 !important;
+        }}
+        body .stApp [data-testid="stHorizontalBlock"] > [data-testid="column"],
+        body .stApp [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {{
+          display: flex !important;
+          flex-direction: column !important;
         }}
       }}
 
