@@ -42,6 +42,9 @@ st.set_page_config(
 
 
 # ---------- DESIGN TOKENS — Modern Minimal palette ----------
+# Hard rule: only THREE accent colors — teal (brand), green (safer), red (risk).
+# Everything else (BG/SURFACE/FG/FG_MUTED/BORDER) is grayscale neutrals — they
+# don't count as "colors" any more than black-and-white type does.
 PRIMARY = "#0F766E"          # teal — brand, headings, route line
 PRIMARY_HOVER = "#115E59"
 PRIMARY_SOFT = "#F0FDFA"
@@ -51,8 +54,9 @@ FG = "#111827"
 FG_MUTED = "#4B5563"
 BORDER = "#E5E7EB"
 SUCCESS = "#16A34A"          # below baseline / safer
-WARNING = "#D97706"          # caution
-DANGER = "#DC2626"           # well above baseline
+DANGER = "#DC2626"           # above baseline / risk
+# WARNING removed — "caution" now uses PRIMARY (teal). Three colors only.
+WARNING = PRIMARY            # alias kept so legacy refs don't break
 
 
 # ---------- GLOBAL CSS ----------
@@ -78,11 +82,11 @@ st.markdown(
     font-weight: 600; color: {PRIMARY}; margin: 0 0 0.3rem 0;
   }}
   .acs-question {{
-    font-size: clamp(1.6rem, 2.6vw, 2.2rem); font-weight: 600; line-height: 1.18;
-    letter-spacing: -0.02em; color: {FG}; margin: 0 0 0.6rem 0;
+    font-size: clamp(1.4rem, 2.2vw, 1.9rem); font-weight: 600; line-height: 1.15;
+    letter-spacing: -0.02em; color: {FG}; margin: 0 0 0.5rem 0;
   }}
   .acs-answer {{
-    font-size: clamp(1rem, 1.5vw, 1.15rem); line-height: 1.55; color: {FG_MUTED};
+    font-size: clamp(0.92rem, 1.3vw, 1.05rem); line-height: 1.5; color: {FG_MUTED};
     margin: 0; max-width: 56ch;
   }}
   .acs-answer .accent {{ color: {DANGER}; font-weight: 600; }}
@@ -91,24 +95,24 @@ st.markdown(
     font-weight: 600; font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase;
     border-radius: 6px; margin-right: 8px; vertical-align: middle;
   }}
-  /* KPI card */
+  /* KPI card — tightened for single-page fit */
   .acs-kpi {{
     background: {SURFACE}; border: 1px solid {BORDER}; border-radius: 8px;
-    padding: 1rem 1.1rem; min-height: 100px;
+    padding: 0.7rem 0.9rem; min-height: 88px;
   }}
   .acs-kpi.dark {{ background: {FG}; color: white; border-color: {FG}; }}
   .acs-kpi .label {{
-    font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.10em;
-    font-weight: 600; color: {FG_MUTED}; margin-bottom: 0.4rem;
+    font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.10em;
+    font-weight: 600; color: {FG_MUTED}; margin-bottom: 0.3rem;
   }}
   .acs-kpi.dark .label {{ color: rgba(255,255,255,0.72); }}
   .acs-kpi .num {{
-    font-size: clamp(1.6rem, 2.6vw, 2.2rem); font-weight: 600; line-height: 1.05;
+    font-size: clamp(1.4rem, 2.2vw, 1.9rem); font-weight: 600; line-height: 1.05;
     letter-spacing: -0.02em; color: {FG};
   }}
   .acs-kpi.dark .num {{ color: white; }}
   .acs-kpi .num.signal {{ color: {DANGER}; }}
-  .acs-kpi .sub {{ font-size: 0.85rem; color: {FG_MUTED}; margin-top: 0.4rem; }}
+  .acs-kpi .sub {{ font-size: 0.78rem; color: {FG_MUTED}; margin-top: 0.3rem; }}
   .acs-kpi.dark .sub {{ color: rgba(255,255,255,0.72); }}
 
   /* Hero risk card (Plan tab) */
@@ -122,7 +126,7 @@ st.markdown(
     font-size: 0.78rem; letter-spacing: 0.08em; margin-bottom: 0.5rem;
   }}
   .acs-hero .verdict.go {{ background: {SUCCESS}; }}
-  .acs-hero .verdict.caution {{ background: {WARNING}; }}
+  .acs-hero .verdict.caution {{ background: {PRIMARY}; }}  /* 3-color: caution → teal */
   .acs-hero .verdict.stop {{ background: {DANGER}; }}
   .acs-hero .verdict.guard {{ background: {PRIMARY}; }}
   .acs-hero .num {{
@@ -131,7 +135,7 @@ st.markdown(
   }}
   .acs-hero .num.calm {{ color: {SUCCESS}; }}
   .acs-hero .num.bad  {{ color: {DANGER}; }}
-  .acs-hero .num.warn {{ color: {WARNING}; }}
+  .acs-hero .num.warn {{ color: white; }}  /* caution number stays white on dark hero */
   .acs-hero .band {{
     font-size: 0.78rem; font-weight: 600; text-transform: uppercase;
     letter-spacing: 0.10em; color: rgba(255,255,255,0.85); margin-bottom: 0.5rem;
@@ -150,25 +154,26 @@ st.markdown(
   .acs-rec p {{ font-size: 0.92rem; line-height: 1.55; color: {FG}; margin: 0; }}
   .acs-rec.calm    {{ border-left-color: {SUCCESS}; background: #F0FDF4; }}
   .acs-rec.calm h4 {{ color: {SUCCESS}; }}
-  .acs-rec.caution    {{ border-left-color: {WARNING}; background: #FFFBEB; }}
-  .acs-rec.caution h4 {{ color: {WARNING}; }}
+  /* "caution" uses teal — same brand color, lighter context */
+  .acs-rec.caution    {{ border-left-color: {PRIMARY}; background: {PRIMARY_SOFT}; }}
+  .acs-rec.caution h4 {{ color: {PRIMARY}; }}
   .acs-rec.danger     {{ border-left-color: {DANGER}; background: #FEF2F2; }}
   .acs-rec.danger h4  {{ color: {DANGER}; }}
 
-  /* Insight card */
+  /* Insight card — tightened */
   .acs-insight {{
     background: {SURFACE}; border: 1px solid {BORDER}; border-radius: 8px;
-    padding: 1rem 1.1rem;
+    padding: 0.7rem 0.9rem;
   }}
   .acs-insight .num {{
-    font-size: 0.7rem; font-weight: 600; color: {PRIMARY};
-    letter-spacing: 0.10em; text-transform: uppercase; margin-bottom: 0.4rem;
+    font-size: 0.68rem; font-weight: 600; color: {PRIMARY};
+    letter-spacing: 0.10em; text-transform: uppercase; margin-bottom: 0.3rem;
   }}
   .acs-insight .stat {{
-    font-size: clamp(1.5rem, 2.4vw, 2rem); font-weight: 600; color: {DANGER};
-    line-height: 1; margin-bottom: 0.4rem;
+    font-size: clamp(1.3rem, 2vw, 1.7rem); font-weight: 600; color: {DANGER};
+    line-height: 1; margin-bottom: 0.3rem;
   }}
-  .acs-insight .h {{ font-size: 0.95rem; font-weight: 600; color: {FG}; line-height: 1.3; }}
+  .acs-insight .h {{ font-size: 0.85rem; font-weight: 600; color: {FG}; line-height: 1.3; }}
 
   /* Streamlit chrome — hide everything that breaks the "exact replica" feel */
   #MainMenu {{ visibility: hidden; }}
@@ -199,8 +204,17 @@ st.markdown(
   /* The page-name badge specifically — it's the only Streamlit element
      positioned with high z-index above the header */
   body > div:not([data-testid]):not([data-stale]):not([class]):not([id]):empty {{ display: none !important; }}
-  /* Tighten outer padding so the layout breathes like the HTML preview */
-  .block-container {{ padding-top: 0.6rem !important; padding-left: 1.2rem !important; padding-right: 1.2rem !important; }}
+  /* Tight outer padding so the layout breathes like the HTML preview */
+  .block-container {{
+    padding-top: 0.5rem !important;
+    padding-left: 1.1rem !important;
+    padding-right: 1.1rem !important;
+    padding-bottom: 0.5rem !important;
+    max-width: 1500px;
+  }}
+  /* Tighten Streamlit's default vertical block gap so cards sit closer */
+  div[data-testid="stVerticalBlock"] {{ gap: 0.55rem !important; }}
+  div[data-testid="stHorizontalBlock"] {{ gap: 0.6rem !important; }}
 
   /* Tabs styling */
   .stTabs [role="tablist"] {{ gap: 0; border-bottom: 1px solid {BORDER}; }}
@@ -239,13 +253,21 @@ st.markdown(
     transform: translateY(-1px);
     box-shadow: 0 2px 6px rgba(17,24,39,0.08), 0 4px 12px rgba(17,24,39,0.04);
   }}
-  /* Wrap every Plotly chart in a clean white card with subtle shadow */
-  div[data-testid="stPlotlyChart"] > div {{
+  /* Wrap every Plotly chart in a clean white card. Target the OUTER container
+     so the chart's title sits inside the card instead of overflowing above it. */
+  div[data-testid="stPlotlyChart"] {{
     background: {SURFACE};
     border: 1px solid {BORDER};
     border-radius: 10px;
-    padding: 14px 16px 10px 16px;
+    padding: 12px 14px 8px 14px;
     box-shadow: 0 1px 2px rgba(17,24,39,0.04), 0 1px 4px rgba(17,24,39,0.03);
+    margin-bottom: 10px;
+    overflow: hidden;
+  }}
+  /* Reset the inner wrapper so styles don't double-apply */
+  div[data-testid="stPlotlyChart"] > div {{
+    background: transparent !important; border: 0 !important;
+    padding: 0 !important; box-shadow: none !important;
   }}
   /* Acrylic shadow on the dark hero card */
   .acs-hero {{
@@ -513,13 +535,14 @@ def _baseline_shape(baseline_pct: float, x0=0, x1=1, axis="y"):
     )
 
 
-def _chart_layout(title: str, height: int = 220) -> dict:
+def _chart_layout(title: str, height: int = 190) -> dict:
     return dict(
-        title=dict(text=title, font=dict(size=14, color=FG, family="Inter"), x=0, xanchor="left"),
-        margin=dict(l=8, r=8, t=36, b=24),
+        title=dict(text=title, font=dict(size=13, color=FG, family="Inter"),
+                   x=0, xanchor="left", y=0.97, yanchor="top"),
+        margin=dict(l=4, r=4, t=30, b=18),
         paper_bgcolor=SURFACE, plot_bgcolor=SURFACE,
         height=height, showlegend=False,
-        font=dict(family="Inter", size=11, color=FG_MUTED),
+        font=dict(family="Inter", size=10, color=FG_MUTED),
         hoverlabel=dict(bgcolor=FG, font=dict(color="white", family="Inter")),
     )
 
@@ -594,7 +617,10 @@ def chart_severity():
     fig = go.Figure(go.Pie(
         labels=["Killed", "Incapacitating injury", "All other crashes"],
         values=[killed, incap, nonincap],
-        marker=dict(colors=[DANGER, WARNING, BORDER], line=dict(color="white", width=2)),
+        # 3-color rule: red for fatal, teal for incapacitating, neutral gray
+        # for everything else.
+        marker=dict(colors=[DANGER, PRIMARY, BORDER],
+                    line=dict(color="white", width=2)),
         hole=0.62, textinfo="none",
         hovertemplate="%{label}: %{value:,} (%{percent})<extra></extra>",
     ))
@@ -678,7 +704,7 @@ with tab_home:
                 unsafe_allow_html=True,
             )
 
-    st.markdown("<div style='height: 12px'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height: 6px'></div>", unsafe_allow_html=True)
 
     # Charts grid (2×2)
     c1, c2 = st.columns(2)
@@ -705,99 +731,67 @@ with tab_home:
             )
 
     # Bottom CTA row — mirrors HTML "NEXT: about to ride? ... Check my ride →"
-    # The button + { } JSON toggle are real DOM elements (via components.html),
-    # so they can click the Plan tab in the parent doc.
-    import streamlit.components.v1 as _components
-    _full_export = json.dumps({
-        "schema": "cyclesafe.streamlit.v1",
-        "total_crashes": D["total"],
-        "baseline_serious_rate": D["baseline"],
-        "killed": D["killed"],
-        "year_range": f"{D['year_min']}-{D['year_max']}",
-        "patterns": {
-            "time": D["time_pattern"], "speed": D["speed_pattern"],
-            "location": D["location_pattern"], "surface": D["surface_pattern"],
-        },
-    }, indent=2, default=str).replace("</", "<\\/")
-    _components.html(
+    # The visible row lives in the main Streamlit DOM (st.markdown), and a tiny
+    # invisible iframe wires the button up to clicking the Plan tab.
+    st.markdown(
         f"""
         <style>
           .acs-cta-row {{
             display: flex; justify-content: space-between; align-items: center;
-            padding: 12px 16px; margin-top: 4px;
-            background: #FFFFFF; border: 1px solid {BORDER}; border-radius: 10px;
-            box-shadow: 0 1px 2px rgba(17,24,39,0.04);
-            font-family: Inter, system-ui, sans-serif;
+            padding: 10px 16px; margin-top: 8px;
+            background: {SURFACE}; border: 1px solid {BORDER}; border-radius: 10px;
+            box-shadow: 0 1px 2px rgba(17,24,39,0.04), 0 4px 10px rgba(17,24,39,0.04);
           }}
-          .acs-cta-row .next {{
-            font-size: 0.92rem; color: {FG_MUTED};
-          }}
-          .acs-cta-row .next b {{
+          .acs-cta-row .next-text {{ font-size: 0.94rem; color: {FG_MUTED}; }}
+          .acs-cta-row .next-text b {{
             color: {PRIMARY}; text-transform: uppercase; letter-spacing: 0.1em;
             font-size: 0.72rem; margin-right: 6px;
           }}
-          .acs-cta-actions {{ display: flex; gap: 8px; align-items: center; }}
-          .acs-cta-primary {{
-            background: {PRIMARY}; color: white; border: 1px solid {PRIMARY};
-            font-weight: 600; padding: 9px 16px; border-radius: 6px;
-            cursor: pointer; font-family: Inter, sans-serif; font-size: 0.92rem;
-            transition: background 140ms ease;
+          button.acs-cta-primary {{
+            background: {PRIMARY} !important; color: white !important;
+            border: 1px solid {PRIMARY} !important;
+            font-weight: 600 !important; padding: 10px 18px !important;
+            border-radius: 6px !important; cursor: pointer !important;
+            font-family: Inter, sans-serif !important; font-size: 0.92rem !important;
+            transition: background 140ms ease !important;
           }}
-          .acs-cta-primary:hover {{ background: {PRIMARY_HOVER}; }}
-          .acs-cta-icon {{
-            background: white; color: {FG};
-            border: 1px solid {BORDER}; border-radius: 6px;
-            width: 38px; height: 38px; cursor: pointer;
-            font-family: 'Courier New', monospace; font-size: 1rem;
-            transition: background 140ms ease;
-          }}
-          .acs-cta-icon:hover {{ background: #F5F5F4; }}
-          .acs-json-modal {{
-            position: fixed; inset: 0; background: rgba(17,24,39,0.45);
-            display: none; align-items: center; justify-content: center;
-            z-index: 9999; font-family: Inter, sans-serif;
-          }}
-          .acs-json-modal.open {{ display: flex; }}
-          .acs-json-modal .panel {{
-            background: white; border-radius: 10px; padding: 18px 20px;
-            max-width: 760px; max-height: 80vh; width: 90%;
-            overflow: auto; box-shadow: 0 20px 50px rgba(0,0,0,0.25);
-          }}
-          .acs-json-modal pre {{
-            font-family: 'Courier New', monospace; font-size: 0.78rem;
-            line-height: 1.5; color: {FG}; white-space: pre-wrap;
-            word-break: break-word;
-          }}
-          .acs-json-modal .close {{
-            float: right; cursor: pointer; background: transparent;
-            border: 0; font-size: 1.4rem; color: {FG_MUTED};
-          }}
+          button.acs-cta-primary:hover {{ background: {PRIMARY_HOVER} !important; }}
         </style>
         <div class="acs-cta-row">
-          <div class="next"><b>Next:</b> about to ride? Let the app check it for you.</div>
-          <div class="acs-cta-actions">
-            <button class="acs-cta-icon" id="acs-show-json" title="Show full JSON">{{ }}</button>
-            <button class="acs-cta-primary" id="acs-check-my-ride">Check my ride →</button>
+          <div class="next-text">
+            <b>Next:</b> about to ride? Let the app check it for you.
           </div>
+          <button class="acs-cta-primary" id="acs-check-my-ride">Check my ride →</button>
         </div>
-        <div class="acs-json-modal" id="acs-json-modal">
-          <div class="panel">
-            <button class="close" id="acs-json-close">×</button>
-            <pre>{_full_export}</pre>
-          </div>
-        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # Tiny iframe — height 0, runs only the click-handler wiring against the
+    # parent doc. Has to be in an iframe because <script> tags injected via
+    # st.markdown are stripped by Streamlit's sanitizer.
+    import streamlit.components.v1 as _components
+    _components.html(
+        """
         <script>
-          document.getElementById('acs-check-my-ride').onclick = () => {{
-            const tabs = window.parent.document.querySelectorAll('[role="tab"]');
-            if (tabs.length >= 2) tabs[1].click();
-          }};
-          const modal = document.getElementById('acs-json-modal');
-          document.getElementById('acs-show-json').onclick = () => modal.classList.add('open');
-          document.getElementById('acs-json-close').onclick = () => modal.classList.remove('open');
-          modal.onclick = (e) => {{ if (e.target === modal) modal.classList.remove('open'); }};
+          (function() {
+            const doc = window.parent.document;
+            const wire = () => {
+              const checkBtn = doc.getElementById('acs-check-my-ride');
+              if (checkBtn && !checkBtn.dataset.wired) {
+                checkBtn.dataset.wired = '1';
+                checkBtn.onclick = () => {
+                  const tabs = doc.querySelectorAll('[role="tab"]');
+                  if (tabs.length >= 2) tabs[1].click();
+                };
+              }
+            };
+            wire();
+            setInterval(wire, 800);
+          })();
         </script>
         """,
-        height=72,
+        height=0,
     )
 
 
