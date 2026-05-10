@@ -355,6 +355,25 @@ st.markdown(
     overflow: hidden;
     min-height: 0;
     padding-top: 8px !important;
+    display: flex;
+    flex-direction: column;
+  }}
+  /* CRITICAL — the stVerticalBlock inside the tab panel is the actual
+     content container. Make it a flex column so its children (hero, chart
+     rows, insights, CTA) can flex-grow to fill remaining viewport. */
+  .stTabs [data-baseweb="tab-panel"] > div[data-testid="stVerticalBlock"] {{
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+  }}
+  /* Inside the home tab vertical block, chart-row horizontal blocks
+     flex-grow to absorb whatever vertical space hero/insights/CTA leave. */
+  .stTabs [data-baseweb="tab-panel"] > div[data-testid="stVerticalBlock"]
+    > div:has(div[data-testid="stPlotlyChart"]) {{
+    flex: 1 1 0 !important;
+    min-height: 0 !important;
   }}
   .stTabs [role="tab"] {{
     padding: 12px 18px; font-weight: 600; color: {FG_MUTED};
