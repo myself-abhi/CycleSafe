@@ -240,8 +240,18 @@ st.markdown(
     max-width: 1600px;
   }}
   /* Tighten Streamlit's default vertical block gap so cards sit closer */
-  div[data-testid="stVerticalBlock"] {{ gap: 0.55rem !important; }}
+  div[data-testid="stVerticalBlock"] {{ gap: 0.45rem !important; }}
   div[data-testid="stHorizontalBlock"] {{ gap: 0.6rem !important; }}
+
+  /* On mobile (≤ 768px), Streamlit stacks columns vertically — let map shrink */
+  @media (max-width: 768px) {{
+    iframe[title^="streamlit_folium"] {{
+      height: clamp(360px, 50vh, 520px) !important;
+    }}
+    div[data-testid="stHorizontalBlock"]:has(iframe[title^="streamlit_folium"]) {{
+      min-height: auto !important;
+    }}
+  }}
 
   /* Responsive map height — fills the Plan tab vertical space. Reads from
      the PLAN_MAP_* design tokens so any height change happens in one place. */
@@ -252,6 +262,41 @@ st.markdown(
   }}
   /* Kill the empty space Streamlit injects below an iframe block */
   div[data-testid="stIFrame"] {{ margin-bottom: 0 !important; padding-bottom: 0 !important; }}
+
+  /* ===== Plan tab column-height matching =====
+     The Plan tab's two columns (sidebar + map) must end at the same vertical
+     point so the action bar can sit flush below both. Three rules below: */
+  /* 1. The columns row gets the same height as the map iframe. */
+  div[data-testid="stHorizontalBlock"]:has(iframe[title^="streamlit_folium"]) {{
+    min-height: clamp({PLAN_MAP_MIN_PX}px, {PLAN_MAP_IDEAL_VH}vh, {PLAN_MAP_MAX_PX}px);
+    align-items: stretch !important;
+  }}
+  /* 2. Each column inside that row stretches to fill the row height. */
+  div[data-testid="stHorizontalBlock"]:has(iframe[title^="streamlit_folium"])
+    > div[data-testid="column"] {{
+    height: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }}
+  /* 3. The sidebar's vertical block becomes a flex column; its LAST border-
+        wrapped container grows to absorb leftover space, keeping all three
+        cards visually filling the column. */
+  div[data-testid="stHorizontalBlock"]:has(iframe[title^="streamlit_folium"])
+    > div[data-testid="column"] > div[data-testid="stVerticalBlock"] {{
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+  }}
+  div[data-testid="stHorizontalBlock"]:has(iframe[title^="streamlit_folium"])
+    > div[data-testid="column"] > div[data-testid="stVerticalBlock"]
+    > div[data-testid="stVerticalBlockBorderWrapper"]:last-of-type {{
+    flex: 1 1 auto;
+  }}
+  /* Tighten the gap between the columns row and the action bar below */
+  div[data-testid="stHorizontalBlock"]:has(iframe[title^="streamlit_folium"])
+    + div {{
+    margin-top: 4px !important;
+  }}
 
   /* Tabs styling */
   .stTabs [role="tablist"] {{
@@ -325,8 +370,9 @@ st.markdown(
     transform: translateY(-1px);
     box-shadow: 0 2px 6px rgba(17,24,39,0.08), 0 4px 12px rgba(17,24,39,0.04);
   }}
-  /* Wrap every Plotly chart in a clean white card. Card height locked to
-     CHART_CARD_HEIGHT (Python) — same value referenced everywhere. */
+  /* Wrap every Plotly chart in a clean white card. Responsive height —
+     uses CHART_CARD_HEIGHT as floor on laptop, grows with viewport on tall
+     screens, shrinks gracefully on mobile. Plotly autosizes inside it. */
   div[data-testid="stPlotlyChart"] {{
     background: {SURFACE};
     border: 1px solid {BORDER};
@@ -334,8 +380,25 @@ st.markdown(
     padding: 4px 6px 2px 6px;
     box-shadow: 0 1px 2px rgba(17,24,39,0.04), 0 1px 4px rgba(17,24,39,0.03);
     margin: 0 0 4px 0 !important;
-    height: {CHART_CARD_HEIGHT}px;
+    height: clamp(220px, 32vh, 360px);
     box-sizing: border-box;
+    overflow: hidden;
+  }}
+  /* Force every nested Plotly element to fill the card 100%, so the chart
+     scales with the card dimensions instead of rendering at its own default. */
+  div[data-testid="stPlotlyChart"] > div,
+  div[data-testid="stPlotlyChart"] .js-plotly-plot,
+  div[data-testid="stPlotlyChart"] .plot-container,
+  div[data-testid="stPlotlyChart"] .svg-container,
+  div[data-testid="stPlotlyChart"] .main-svg {{
+    height: 100% !important;
+    width: 100% !important;
+  }}
+  /* Mobile: stack the 2x2 grid as 1×4, slightly shorter cards */
+  @media (max-width: 768px) {{
+    div[data-testid="stPlotlyChart"] {{
+      height: clamp(200px, 38vh, 300px);
+    }}
   }}
   /* Reset the inner wrapper so styles don't double-apply */
   div[data-testid="stPlotlyChart"] > div {{
@@ -642,19 +705,31 @@ def _baseline_shape(baseline_pct: float, x0=0, x1=1, axis="y"):
     )
 
 
-def _chart_layout(title: str, height: int = CHART_INNER_HEIGHT) -> dict:
-    """Uniform chart layout. Fixed height matches the CSS card height exactly,
-    so there's never internal whitespace inside the card or gap between rows.
-    autosize=False so Plotly renders at exactly the height we specify.
+def _format_chart_title(name: str, subtitle: str) -> str:
+    """Bold name + lighter subtitle on the same line. No em-dash separator —
+    visual hierarchy comes from weight + color contrast alone.
+    """
+    return (f"<b>{name}</b>  "
+            f"<span style='font-weight:400; color:{FG_MUTED};'>{subtitle}</span>")
+
+
+def _chart_layout(title: str, height: int = CHART_INNER_HEIGHT,
+                  show_legend: bool = False) -> dict:
+    """Uniform chart layout. autosize=True so the chart fills its responsive
+    container exactly — no whitespace inside the card, no overflow.
     """
     return dict(
-        title=dict(text=title, font=dict(size=12, color=FG, family="Inter"),
+        title=dict(text=title, font=dict(size=13, color=FG, family="Inter"),
                    x=0, xanchor="left", y=0.985, yanchor="top",
                    pad=dict(t=0, b=0)),
-        margin=dict(l=42, r=18, t=24, b=40),
+        margin=dict(l=64, r=20, t=30, b=38 if not show_legend else 54),
         paper_bgcolor=SURFACE, plot_bgcolor=SURFACE,
-        height=height, autosize=False, showlegend=False,
-        font=dict(family="Inter", size=9, color=FG_MUTED),
+        autosize=True, showlegend=show_legend,
+        legend=dict(orientation="h", x=0.5, xanchor="center",
+                    y=-0.08, yanchor="top",
+                    bgcolor="rgba(0,0,0,0)", borderwidth=0,
+                    font=dict(size=10, color=FG_MUTED)),
+        font=dict(family="Inter", size=10, color=FG_MUTED),
         hoverlabel=dict(bgcolor=FG, font=dict(color="white", family="Inter")),
     )
 
@@ -676,7 +751,8 @@ def chart_time_of_day():
         hovertemplate="%{x}<br>%{y:.1f}% serious-injury<extra></extra>",
     ))
     fig.add_shape(**_baseline_shape(D["baseline"] * 100))
-    fig.update_layout(**_chart_layout("Risk by time of day — evenings 2× midday"))
+    fig.update_layout(**_chart_layout(
+        _format_chart_title("Risk by time of day", "evenings 2× midday")))
     fig.update_yaxes(ticksuffix="%", gridcolor=BORDER, zeroline=False)
     fig.update_xaxes(showgrid=False)
     return fig
@@ -694,7 +770,8 @@ def chart_speed():
         textposition="outside", textfont=dict(color=FG, size=11),
         hovertemplate="%{y}<br>%{x:.1f}% serious-injury<extra></extra>",
     ))
-    fig.update_layout(**_chart_layout("Risk by street speed — 45 mph triples it"))
+    fig.update_layout(**_chart_layout(
+        _format_chart_title("Risk by street speed", "45 mph triples it")))
     fig.update_xaxes(ticksuffix="%", gridcolor=BORDER, range=[0, 24])
     fig.update_yaxes(showgrid=False, autorange="reversed")
     return fig
@@ -713,8 +790,10 @@ def chart_year():
         name="Serious or fatal", marker=dict(color=DANGER),
         hovertemplate="%{x}<br>Serious: %{y}<extra></extra>",
     ))
-    fig.update_layout(**_chart_layout("Fatalities by year — 2017 the worst"),
-                      barmode="overlay", legend=dict(orientation="h", y=-0.18))
+    fig.update_layout(**_chart_layout(
+        _format_chart_title("Fatalities by year", "2017 the worst"),
+        show_legend=True),
+        barmode="overlay")
     fig.update_yaxes(gridcolor=BORDER)
     fig.update_xaxes(showgrid=False, dtick=1)
     return fig
@@ -735,8 +814,8 @@ def chart_severity():
         hole=0.62, textinfo="none",
         hovertemplate="%{label}: %{value:,} (%{percent})<extra></extra>",
     ))
-    fig.update_layout(**_chart_layout("Severity breakdown — 1-in-9 serious"),
-                      legend=dict(orientation="h", y=-0.10, x=0.5, xanchor="center"))
+    fig.update_layout(**_chart_layout(
+        _format_chart_title("Severity breakdown", "1-in-9 serious")))
     return fig
 
 
@@ -1183,9 +1262,9 @@ with tab_plan:
                 st.rerun()
 
     # =========================================================
-    # FULL-WIDTH action bar — sits below both sidebar AND map column
+    # FULL-WIDTH action bar — sits flush below both sidebar AND map column.
+    # The :has() rule above already tightens the gap; no extra spacer needed.
     # =========================================================
-    st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
     ab1, ab2, ab3, ab4 = st.columns(4)
     with ab1:
         if st.button("💾 Save ride", use_container_width=True,
@@ -1267,7 +1346,7 @@ def _render_ride_card(title: str, geojson: dict | None, meters: float, risk: dic
     risk = risk or {}
     miles = meters / 1609.344 if meters else 0
     band = risk.get("band", "calm")
-    band_label = risk.get("band_label", "—")
+    band_label = risk.get("band_label", "-")
     inputs = risk.get("inputs", {})
     num_class = {"calm": "calm", "caution": "warn", "danger": "bad"}.get(band, "")
 
@@ -1278,7 +1357,7 @@ def _render_ride_card(title: str, geojson: dict | None, meters: float, risk: dic
           <span style="font-weight: 600; letter-spacing: 0.04em;">{title}</span>
           <span style="font-size: 0.72rem; letter-spacing: 0.10em; text-transform: uppercase;
                        opacity: 0.85;">
-            {inputs.get('tb', '—')} · {inputs.get('sf', '—')}
+            {inputs.get('tb', '-')} · {inputs.get('sf', '-')}
           </span>
         </div>
         """,
@@ -1410,9 +1489,9 @@ def _render_ride_card(title: str, geojson: dict | None, meters: float, risk: dic
                           padding-top: 0.7rem; font-size: 0.82rem; line-height: 1.55;
                           color: rgba(255,255,255,0.9);">
                 <div><b>Distance:</b> {miles:.2f} mi · {meters/1000:.2f} km</div>
-                <div><b>Street:</b> {inputs.get('sb', '—')}</div>
-                <div><b>Location:</b> {inputs.get('loc', '—')}</div>
-                <div><b>Helmet:</b> {inputs.get('helmet', '—')}</div>
+                <div><b>Street:</b> {inputs.get('sb', '-')}</div>
+                <div><b>Location:</b> {inputs.get('loc', '-')}</div>
+                <div><b>Helmet:</b> {inputs.get('helmet', '-')}</div>
               </div>
               <button title="Show JSON"
                       onclick="document.getElementById('{modal_id}').style.display='flex';"
@@ -1504,7 +1583,7 @@ with tab_results:
         if st.session_state.drawn_route:
             current_meters = _route_distance_meters(st.session_state.drawn_route)
             risk = st.session_state.current_risk or {"rate": 0, "band": "calm",
-                                                     "band_label": "—", "n": 0,
+                                                     "band_label": "-", "n": 0,
                                                      "serious": 0, "killed": 0,
                                                      "inputs": {}}
             _render_ride_card(
