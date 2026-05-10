@@ -69,9 +69,10 @@ def layout_budget(viewport_h: int) -> dict[str, int]:
     GAPS  = 28    # ~12 px between each of 3 rows
     available = max(540, viewport_h - FIXED - GAPS)
 
-    # Per-row ratios — pattern row gets more space for its small-multiples grid
-    decision_card = max(200, int(available * 0.27))   # 3 cards same height
-    pattern_card  = max(300, int(available * 0.40))   # 2 cards same height
+    # Per-row ratios — decision row needs more height for verdict + KPI strip,
+    # pattern row gets most space for its small-multiples grid + curve.
+    decision_card = max(260, int(available * 0.30))   # 3 cards same height
+    pattern_card  = max(310, int(available * 0.40))   # 2 cards same height
     drivers_card  = max(220, int(available * 0.27))   # 4 cards same height
 
     # Plotly font sizes scale with viewport — small screens get smaller
@@ -729,6 +730,14 @@ def inject_css() -> None:
       color: white; font-size: clamp(10px, 0.78vw, 12px); font-weight: 700;
       letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 10px;
     }}
+    /* Decision card body: flex column that pins the KPI strip at the bottom
+       and lets the text flex in the middle. Guarantees no overflow inside
+       the fixed-height card regardless of how long the verdict sub-text is. */
+    .acs-decision-body {{
+      display: flex; flex-direction: column; justify-content: space-between;
+      height: 100%; min-height: 0;
+    }}
+    .acs-decision-body > div:first-child {{ flex: 1 1 auto; min-height: 0; }}
     .acs-hero {{
       font-size: clamp(20px, 2.0vw, 34px); line-height: 1.2; font-weight: 700;
       color: {INK}; letter-spacing: -0.01em; margin: 0 0 6px 0;
@@ -796,7 +805,15 @@ def inject_css() -> None:
       border-radius: 6px; display: inline-block; margin-bottom: 8px;
     }}
     .acs-caption {{
-      font-size: clamp(9px, 0.78vw, 12px); color: {MUTED}; margin-top: 4px;
+      font-size: clamp(9px, 0.78vw, 12px); color: {MUTED};
+      margin-top: -6px !important; line-height: 1.35;
+    }}
+    /* Tight gap between chart and caption inside bordered cards — pulls the
+       caption up close under the chart instead of leaving Streamlit's
+       default vertical block gap as dead space. */
+    div[data-testid="stVerticalBlockBorderWrapper"]
+      > div[data-testid="stVerticalBlock"] {{
+      gap: 2px !important;
     }}
     label[data-testid="stWidgetLabel"] {{ display: none !important; }}
     div[data-testid="stSlider"] {{ padding-top: 4px; }}
@@ -861,17 +878,24 @@ def render_decision_band(slice_df: pd.DataFrame, all_df: pd.DataFrame) -> None:
     c1, c2, c3 = st.columns([1.6, 1.0, 1.0])
     with c1:
         with st.container(border=True, height=DECISION_H):
+            # Wrap content in a flex column so pill+text and KPI strip
+            # distribute the full card height — KPI strip pinned at bottom,
+            # text flexes in the available middle space, no overflow.
             st.markdown(f"""
-            <span class="acs-pill" style="background:{pill_color};">{v.code}</span>
-            <div class="acs-hero">{v.headline}</div>
-            <div class="acs-sub">{v.sub}</div>
-            <div class="acs-kpi-row">
-              <div class="acs-kpi"><div class="label">Your conditions</div>
-                <div class="num" style="color:{pill_color};">{your_disp}</div></div>
-              <div class="acs-kpi"><div class="label">Austin baseline</div>
-                <div class="num">{base_disp}</div></div>
-              <div class="acs-kpi"><div class="label">Matching crashes</div>
-                <div class="num">{n_disp}</div></div>
+            <div class="acs-decision-body">
+              <div>
+                <span class="acs-pill" style="background:{pill_color};">{v.code}</span>
+                <div class="acs-hero">{v.headline}</div>
+                <div class="acs-sub">{v.sub}</div>
+              </div>
+              <div class="acs-kpi-row">
+                <div class="acs-kpi"><div class="label">Your conditions</div>
+                  <div class="num" style="color:{pill_color};">{your_disp}</div></div>
+                <div class="acs-kpi"><div class="label">Austin baseline</div>
+                  <div class="num">{base_disp}</div></div>
+                <div class="acs-kpi"><div class="label">Matching crashes</div>
+                  <div class="num">{n_disp}</div></div>
+              </div>
             </div>
             """, unsafe_allow_html=True)
     with c2:
