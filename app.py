@@ -431,21 +431,21 @@ st.markdown(
     height: clamp(220px, calc((100vh - 350px) / 2), 420px);
     min-height: 220px;
   }}
-  /* Force every nested Plotly element to fill the card 100% AND clip overflow.
-     Two effects in one rule: charts grow with the card (liquid) AND any
-     mis-rendered content stays inside (no scrollbar). */
+  /* Every nested Plotly element fills the card 100%. Plotly's responsive
+     config + autosize=True listens for container resize and re-renders the
+     SVG to match. The SVG itself also gets height/width 100% so even before
+     Plotly's resize listener fires, it visually fills. */
   div[data-testid="stPlotlyChart"] > div,
   div[data-testid="stPlotlyChart"] .js-plotly-plot,
   div[data-testid="stPlotlyChart"] .plot-container,
   div[data-testid="stPlotlyChart"] .svg-container,
   div[data-testid="stPlotlyChart"] .user-select-none,
   div[data-testid="stPlotlyChart"] .draglayer,
-  div[data-testid="stPlotlyChart"] .main-svg {{
+  div[data-testid="stPlotlyChart"] .main-svg,
+  div[data-testid="stPlotlyChart"] svg {{
     height: 100% !important;
     width: 100% !important;
     overflow: hidden !important;
-    overflow-x: hidden !important;
-    overflow-y: hidden !important;
   }}
   /* Column wrappers around chart cards: just kill overflow, don't flex.
      Chart cards size themselves via calc() height. */
@@ -796,34 +796,33 @@ def _format_chart_title(name: str, subtitle: str) -> str:
             f"<span style='font-weight:400; color:{FG_MUTED};'>{subtitle}</span>")
 
 
-def _chart_layout(title: str, height: int = CHART_INNER_HEIGHT,
+def _chart_layout(title: str, height: int | None = None,
                   show_legend: bool = False) -> dict:
-    """Auto-fitting Plotly layout. automargin lets the chart tighten its edges
-    against the panel; tickfont sized for legibility on the smallest viewport
-    (220px floor) but readable up through 4K. Legend always at the bottom so
-    it never steals horizontal space at narrower widths.
+    """Liquid Plotly layout. autosize=True lets the chart resize when its
+    container resizes (combined with config={"responsive": True} on the
+    Streamlit call AND CSS that forces inner Plotly elements to height:100%).
     """
-    return dict(
+    layout = dict(
         title=dict(text=title, font=dict(size=13, color=FG, family="Inter"),
                    x=0, xanchor="left", y=0.985, yanchor="top",
                    pad=dict(t=0, b=0)),
-        # Margins are FALLBACKS — automargin on the axes tightens them
-        # automatically against actual rendered content.
         margin=dict(l=56, r=18, t=30, b=36 if not show_legend else 52,
                     autoexpand=True),
         paper_bgcolor=SURFACE, plot_bgcolor=SURFACE,
-        height=height, autosize=False, showlegend=show_legend,
+        autosize=True, showlegend=show_legend,
         legend=dict(orientation="h", x=0.5, xanchor="center",
                     y=-0.16, yanchor="top",
                     bgcolor="rgba(0,0,0,0)", borderwidth=0,
                     font=dict(size=10, color=FG_MUTED)),
         font=dict(family="Inter", size=10, color=FG_MUTED),
         hoverlabel=dict(bgcolor=FG, font=dict(color="white", family="Inter")),
-        # Default both axes to auto-fitting their tick labels and to a tight,
-        # readable font size that holds up at the smallest panel size.
         xaxis=dict(automargin=True, tickfont=dict(size=10, color=FG_MUTED)),
         yaxis=dict(automargin=True, tickfont=dict(size=10, color=FG_MUTED)),
     )
+    if height is not None:
+        layout["height"] = height
+        layout["autosize"] = False
+    return layout
 
 
 # NOTE: @st.cache_data was removed from these chart functions because the
@@ -995,11 +994,11 @@ with tab_home:
 
     # Charts grid (2×2)
     c1, c2 = st.columns(2)
-    with c1: st.plotly_chart(chart_time_of_day(), use_container_width=True, config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False, "staticPlot": False})
-    with c2: st.plotly_chart(chart_speed(),       use_container_width=True, config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False, "staticPlot": False})
+    with c1: st.plotly_chart(chart_time_of_day(), use_container_width=True, config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False, "responsive": True})
+    with c2: st.plotly_chart(chart_speed(),       use_container_width=True, config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False, "responsive": True})
     c3, c4 = st.columns(2)
-    with c3: st.plotly_chart(chart_year(),        use_container_width=True, config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False, "staticPlot": False})
-    with c4: st.plotly_chart(chart_severity(),    use_container_width=True, config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False, "staticPlot": False})
+    with c3: st.plotly_chart(chart_year(),        use_container_width=True, config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False, "responsive": True})
+    with c4: st.plotly_chart(chart_severity(),    use_container_width=True, config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False, "responsive": True})
 
     # Insight strip
     i1, i2, i3, i4 = st.columns(4)
