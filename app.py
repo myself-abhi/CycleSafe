@@ -53,8 +53,15 @@ SURFACE = "#FFFFFF"
 FG = "#111827"
 FG_MUTED = "#4B5563"
 BORDER = "#E5E7EB"
-SUCCESS = "#16A34A"          # below baseline / safer
-DANGER = "#DC2626"           # above baseline / risk
+SUCCESS = "#16A34A"          # below baseline / safer  (Tailwind green-600)
+DANGER = "#DC2626"           # above baseline / risk    (Tailwind red-600)
+# Soft (10% alpha) variants of the same colors — used for chart fills and
+# tinted backgrounds. Derived from the hex values above so visual identity
+# is guaranteed.
+SUCCESS_SOFT = "rgba(22,163,74,0.10)"   # #16A34A at 10% alpha
+DANGER_SOFT = "rgba(220,38,38,0.10)"    # #DC2626 at 10% alpha
+SUCCESS_TINT = "#F0FDF4"     # background tint behind calm recommendations
+DANGER_TINT = "#FEF2F2"      # background tint behind danger recommendations
 # WARNING removed — "caution" now uses PRIMARY (teal). Three colors only.
 WARNING = PRIMARY            # alias kept so legacy refs don't break
 
@@ -82,13 +89,13 @@ st.markdown(
     font-weight: 600; color: {PRIMARY}; margin: 0 0 0.3rem 0;
   }}
   .acs-question {{
-    font-size: clamp(0.92rem, 1.15vw, 1.1rem); font-weight: 600; line-height: 1.25;
+    font-size: clamp(0.78rem, 0.95vw, 0.92rem); font-weight: 600; line-height: 1.3;
     letter-spacing: -0.01em; color: {FG}; margin: 0 0 0.4rem 0;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    /* No truncation rules — font is small enough to fit naturally */
   }}
   .acs-answer {{
-    font-size: clamp(0.82rem, 1vw, 0.9rem); line-height: 1.5; color: {FG_MUTED};
-    margin: 0; max-width: 64ch;
+    font-size: clamp(0.75rem, 0.9vw, 0.85rem); line-height: 1.5; color: {FG_MUTED};
+    margin: 0; max-width: 70ch;
   }}
   .acs-answer .accent {{ color: {DANGER}; font-weight: 600; }}
   .acs-yes-tag {{
@@ -153,12 +160,12 @@ st.markdown(
     text-transform: uppercase; letter-spacing: 0.08em; margin: 0 0 0.25rem 0;
   }}
   .acs-rec p {{ font-size: 0.82rem; line-height: 1.45; color: {FG}; margin: 0; }}
-  .acs-rec.calm    {{ border-left-color: {SUCCESS}; background: #F0FDF4; }}
+  .acs-rec.calm    {{ border-left-color: {SUCCESS}; background: {SUCCESS_TINT}; }}
   .acs-rec.calm h4 {{ color: {SUCCESS}; }}
   /* "caution" uses teal — same brand color, lighter context */
   .acs-rec.caution    {{ border-left-color: {PRIMARY}; background: {PRIMARY_SOFT}; }}
   .acs-rec.caution h4 {{ color: {PRIMARY}; }}
-  .acs-rec.danger     {{ border-left-color: {DANGER}; background: #FEF2F2; }}
+  .acs-rec.danger     {{ border-left-color: {DANGER}; background: {DANGER_TINT}; }}
   .acs-rec.danger h4  {{ color: {DANGER}; }}
 
   /* Insight card — tightened */
@@ -211,11 +218,16 @@ st.markdown(
     padding-left: 1.1rem !important;
     padding-right: 1.1rem !important;
     padding-bottom: 0.5rem !important;
-    max-width: 1500px;
+    max-width: 1600px;
   }}
   /* Tighten Streamlit's default vertical block gap so cards sit closer */
   div[data-testid="stVerticalBlock"] {{ gap: 0.55rem !important; }}
   div[data-testid="stHorizontalBlock"] {{ gap: 0.6rem !important; }}
+
+  /* Responsive map height — adapts to viewport on the Plan tab */
+  iframe[title^="streamlit_folium"] {{
+    height: clamp(520px, 72vh, 760px) !important;
+  }}
 
   /* Tabs styling */
   .stTabs [role="tablist"] {{ gap: 0; border-bottom: 1px solid {BORDER}; }}
@@ -225,12 +237,25 @@ st.markdown(
   }}
   .stTabs [aria-selected="true"] {{ color: {FG}; border-bottom-color: {PRIMARY}; }}
 
-  /* Buttons */
-  .stButton > button {{
-    background: {PRIMARY}; color: white; border: 1px solid {PRIMARY};
-    font-weight: 600; border-radius: 6px;
+  /* Buttons — unified GREEN background across Streamlit + download buttons */
+  .stButton > button,
+  .stDownloadButton > button {{
+    background: {SUCCESS} !important; color: white !important;
+    border: 1px solid {SUCCESS} !important;
+    font-weight: 600 !important; border-radius: 6px !important;
+    height: 40px !important;
+    transition: background 140ms ease !important;
   }}
-  .stButton > button:hover {{ background: {PRIMARY_HOVER}; border-color: {PRIMARY_HOVER}; }}
+  .stButton > button:hover:not(:disabled),
+  .stDownloadButton > button:hover:not(:disabled) {{
+    background: #15803D !important;  /* darker green-700 on hover */
+    border-color: #15803D !important;
+  }}
+  .stButton > button:disabled,
+  .stDownloadButton > button:disabled {{
+    background: #E5E7EB !important; color: #9CA3AF !important;
+    border-color: #E5E7EB !important; cursor: not-allowed !important;
+  }}
 
   /* Hide Leaflet.Draw's edit + remove toolbar (clear-route lives in sidebar) */
   .leaflet-draw-edit-edit, .leaflet-draw-edit-remove {{ display: none !important; }}
@@ -257,16 +282,18 @@ st.markdown(
     box-shadow: 0 2px 6px rgba(17,24,39,0.08), 0 4px 12px rgba(17,24,39,0.04);
   }}
   /* Wrap every Plotly chart in a clean white card. Target the OUTER container
-     so the chart's title sits inside the card instead of overflowing above it. */
+     so the chart's title sits inside the card instead of overflowing above it.
+     IMPORTANT: no overflow:hidden — that was clipping the x-axis labels. */
   div[data-testid="stPlotlyChart"] {{
     background: {SURFACE};
     border: 1px solid {BORDER};
     border-radius: 10px;
-    padding: 8px 10px 8px 10px;
+    padding: 8px 8px 4px 8px;
     box-shadow: 0 1px 2px rgba(17,24,39,0.04), 0 1px 4px rgba(17,24,39,0.03);
     margin-bottom: 10px;
-    overflow: hidden;
-    min-height: 250px;
+    min-height: 290px;
+    height: 290px;
+    box-sizing: border-box;
   }}
   /* Reset the inner wrapper so styles don't double-apply */
   div[data-testid="stPlotlyChart"] > div {{
@@ -573,13 +600,14 @@ def _baseline_shape(baseline_pct: float, x0=0, x1=1, axis="y"):
     )
 
 
-def _chart_layout(title: str, height: int = 230) -> dict:
+def _chart_layout(title: str, height: int = 270) -> dict:
     """Uniform chart layout. Generous margins so axis labels never clip."""
     return dict(
         title=dict(text=title, font=dict(size=13, color=FG, family="Inter"),
-                   x=0, xanchor="left", y=0.96, yanchor="top"),
-        # Bigger l/r/b margins to keep axis labels fully inside the card
-        margin=dict(l=42, r=24, t=40, b=42),
+                   x=0, xanchor="left", y=0.97, yanchor="top"),
+        # Margins big enough that x-axis category labels and y-axis tick labels
+        # always render fully inside the chart bounds.
+        margin=dict(l=46, r=22, t=42, b=48),
         paper_bgcolor=SURFACE, plot_bgcolor=SURFACE,
         height=height, showlegend=False,
         font=dict(family="Inter", size=10, color=FG_MUTED),
@@ -598,7 +626,7 @@ def chart_time_of_day():
         mode="lines+markers",
         line=dict(color=DANGER, width=2.5, shape="spline"),
         marker=dict(color=DANGER, size=8, line=dict(color="white", width=2)),
-        fill="tozeroy", fillcolor="rgba(220,38,38,0.10)",
+        fill="tozeroy", fillcolor=DANGER_SOFT,
         hovertemplate="%{x}<br>%{y:.1f}% serious-injury<extra></extra>",
     ))
     fig.add_shape(**_baseline_shape(D["baseline"] * 100))
@@ -788,14 +816,15 @@ with tab_home:
             font-size: 0.72rem; margin-right: 6px;
           }}
           button.acs-cta-primary {{
-            background: {PRIMARY} !important; color: white !important;
-            border: 1px solid {PRIMARY} !important;
-            font-weight: 600 !important; padding: 10px 18px !important;
+            background: {SUCCESS} !important; color: white !important;
+            border: 1px solid {SUCCESS} !important;
+            font-weight: 600 !important; height: 40px !important;
+            padding: 0 18px !important;
             border-radius: 6px !important; cursor: pointer !important;
             font-family: Inter, sans-serif !important; font-size: 0.92rem !important;
             transition: background 140ms ease !important;
           }}
-          button.acs-cta-primary:hover {{ background: {PRIMARY_HOVER} !important; }}
+          button.acs-cta-primary:hover {{ background: #15803D !important; }}
         </style>
         <div class="acs-cta-row">
           <div class="next-text">
@@ -1098,8 +1127,10 @@ with tab_plan:
                     [min(lats) - lat_pad, min(lngs) - lng_pad],
                     [max(lats) + lat_pad, max(lngs) + lng_pad],
                 ])
+        # Height is overridden by the iframe CSS rule above (clamp 520-760px)
         out = st_folium(m, height=600, width=None,
-                        returned_objects=["last_active_drawing"], key="plan_map")
+                        returned_objects=["last_active_drawing"], key="plan_map",
+                        use_container_width=True)
         if out and out.get("last_active_drawing"):
             new_route = out["last_active_drawing"]
             # Only update + rerun when the route actually changed, to avoid loops
@@ -1144,15 +1175,21 @@ with tab_plan:
             view_label = (f"📊 Results ({saved_n}) →"
                           if saved_n else "📊 Results →")
             import streamlit.components.v1 as _comps_view
+            # Match the Streamlit button heights (40px) + add 4px buffer for the
+            # iframe so it lines up perfectly with Save/Clear/Export.
             _comps_view.html(
                 f"""
+                <html><body style="margin:0;padding:0;">
                 <button id="view-results-jump-plan"
-                        style="width:100%; padding: 8px 12px;
-                               background: {PRIMARY}; color: white;
-                               border: 1px solid {PRIMARY}; border-radius: 6px;
+                        style="width:100%; height: 40px; padding: 0 12px;
+                               background: {SUCCESS}; color: white;
+                               border: 1px solid {SUCCESS}; border-radius: 6px;
                                font-weight: 600; font-family: Inter, sans-serif;
-                               font-size: 0.85rem; cursor: pointer;
-                               white-space: nowrap;">
+                               font-size: 0.92rem; cursor: pointer;
+                               white-space: nowrap;
+                               transition: background 140ms ease;"
+                        onmouseover="this.style.background='#15803D';"
+                        onmouseout="this.style.background='{SUCCESS}';">
                   {view_label}
                 </button>
                 <script>
@@ -1161,8 +1198,9 @@ with tab_plan:
                     if (tabs.length >= 3) tabs[2].click();
                   }};
                 </script>
+                </body></html>
                 """,
-                height=42,
+                height=44,
             )
 
 
