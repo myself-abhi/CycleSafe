@@ -14,6 +14,13 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+# Optional viewport detection — graceful fallback if package not installed
+try:
+    from streamlit_javascript import st_javascript
+    _HAS_JS = True
+except ImportError:
+    _HAS_JS = False
+
 # ---------- CONFIG ----------
 DATA_PATH = "bike_crash.csv"
 MIN_SAMPLE = 30  # sample-size floor for trustworthy verdict
@@ -29,6 +36,48 @@ st.set_page_config(
     page_title="Austin CycleSafe", page_icon="🚲",
     layout="wide", initial_sidebar_state="collapsed",
 )
+
+
+# ---------- VIEWPORT DETECTION ----------
+def get_viewport() -> tuple[int, int]:
+    """Read window dimensions on first render, cache in session state.
+    Returns (height_px, width_px). Falls back to (900, 1440) if JS unavailable.
+    """
+    if "viewport_h" in st.session_state and "viewport_w" in st.session_state:
+        return st.session_state.viewport_h, st.session_state.viewport_w
+    if _HAS_JS:
+        try:
+            h = st_javascript("window.innerHeight", key="vp_h")
+            w = st_javascript("window.innerWidth", key="vp_w")
+            if h and w and h > 100 and w > 100:
+                st.session_state.viewport_h = int(h)
+                st.session_state.viewport_w = int(w)
+                return int(h), int(w)
+        except Exception:
+            pass
+    # Fallback: assume typical 1080p laptop with browser chrome
+    return 880, 1440
+
+
+def layout_budget(viewport_h: int) -> dict[str, int]:
+    """Distribute viewport height across the 5 visible bands.
+    Returns pixel heights for each chart that should grow with viewport.
+    Band 0 (header) ~64, Band 1 (filters) ~84, Band 5 (footer) ~32 are fixed.
+    Bands 2/3/4 share the rest proportionally — 3:3:2 ratio.
+    """
+    fixed = 64 + 84 + 32 + 24  # header, filters, footer, paddings
+    available = max(420, viewport_h - fixed)
+    band2 = int(available * 0.30)   # decision hero — taller hero card
+    band3 = int(available * 0.40)   # pattern row (charts grid + hour curve)
+    band4 = available - band2 - band3
+    return {
+        "decision_card": band2,         # hero card height
+        "gauge": min(190, band2 - 90),  # gauge chart height
+        "hour_curve": max(180, band3 - 30),  # main hour curve
+        "small_tile": max(90, (band3 - 60) // 2),  # each small-multiple tile
+        "drivers_chart": max(140, band4 - 40),  # severity bar / heatmap
+        "donut": max(90, band4 - 90),    # donut chart
+    }
 
 # ---------- DATA ----------
 @st.cache_data(show_spinner=False)
@@ -289,6 +338,11 @@ def empty_fig(height: int = 220, msg: str = "No data for this slice") -> go.Figu
     return fig
 
 
+def _h(key: str, fallback: int) -> int:
+    """Read a budgeted height from session state, fall back if absent."""
+    return st.session_state.get("budget", {}).get(key, fallback)
+
+
 def gauge_chart(v: Verdict) -> go.Figure:
     if v.code == "INSUFFICIENT" or v.baseline == 0:
         score, color = 0, MUTED
@@ -310,7 +364,7 @@ def gauge_chart(v: Verdict) -> go.Figure:
             ],
         }, domain={"x": [0, 1], "y": [0, 1]},
     ))
-    fig.update_layout(**base_layout(height=170, b=8, t=4, l=6, r=6))
+    fig.update_layout(**base_layout(height=_h("gauge", 170), b=8, t=4, l=6, r=6))
     return fig
 
 
@@ -346,7 +400,7 @@ def hour_curve(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: str) -> go.F
                            showarrow=True, arrowhead=0, ax=0, ay=-22,
                            font=dict(size=9, color=color), bgcolor="white",
                            bordercolor=BORDER, borderwidth=1)
-    fig.update_layout(**base_layout(height=220, l=44, b=30))
+    fig.update_layout(**base_layout(height=_h("hour_curve", 220), l=44, b=30))
     fig.update_yaxes(ticksuffix="%", gridcolor=BORDER, zeroline=False)
     fig.update_xaxes(showgrid=False, dtick=4, range=[-0.5, 23.5])
     return fig
@@ -371,7 +425,7 @@ def small_multiple(slice_df: pd.DataFrame, baseline: float, dim: str,
         customdata=grp["n"].values, width=0.7,
     ))
     fig.add_hline(y=baseline * 100, line=dict(color=MUTED, width=1, dash="dot"))
-    fig.update_layout(**base_layout(height=120, l=28, r=4, t=4, b=22))
+    fig.update_layout(**base_layout(height=_h("small_tile", 120), l=28, r=4, t=4, b=22))
     fig.update_yaxes(range=[0, max(40, rates.max() * 1.2 if len(rates) else 40)],
                      ticksuffix="%", gridcolor=BORDER, tickfont=dict(size=8), nticks=3)
     fig.update_xaxes(showgrid=False, tickfont=dict(size=8))
@@ -391,7 +445,7 @@ def hour_curve_small(slice_df: pd.DataFrame, baseline: float, color: str) -> go.
         hovertemplate="%{x:02d}:00<br>%{y:.1f}% KSI<extra></extra>",
     ))
     fig.add_hline(y=baseline * 100, line=dict(color=MUTED, width=1, dash="dot"))
-    fig.update_layout(**base_layout(height=120, l=28, r=4, t=4, b=22))
+    fig.update_layout(**base_layout(height=_h("small_tile", 120), l=28, r=4, t=4, b=22))
     fig.update_yaxes(range=[0, 40], ticksuffix="%", gridcolor=BORDER,
                      tickfont=dict(size=8), nticks=3)
     fig.update_xaxes(showgrid=False, dtick=6, tickfont=dict(size=8))
@@ -412,7 +466,7 @@ def severity_bar(slice_df: pd.DataFrame, color: str) -> go.Figure:
         text=counts.values, textposition="outside", textfont=dict(size=10, color=INK),
         hovertemplate="%{y}<br>%{x} crashes<extra></extra>",
     ))
-    fig.update_layout(**base_layout(height=180, l=110, r=24, t=4, b=14))
+    fig.update_layout(**base_layout(height=_h("drivers_chart", 180), l=110, r=24, t=4, b=14))
     fig.update_xaxes(visible=False)
     fig.update_yaxes(autorange="reversed", tickfont=dict(size=10))
     return fig
@@ -460,7 +514,7 @@ def heatmap(slice_df: pd.DataFrame, color: str) -> go.Figure:
             hovertemplate="%{y} %{x:02d}:00<br>%{z:.0f}% KSI<br>%{customdata} crashes<extra></extra>",
             zmin=0, zmax=zmax_val, xgap=1, ygap=1,
         ))
-        fig.update_layout(**base_layout(height=180, l=32, r=4, t=4, b=22))
+        fig.update_layout(**base_layout(height=_h("drivers_chart", 180), l=32, r=4, t=4, b=22))
         fig.update_xaxes(dtick=4, tickfont=dict(size=8), showgrid=False)
         fig.update_yaxes(tickfont=dict(size=9), showgrid=False)
         return fig
@@ -481,7 +535,7 @@ def roadway_breakdown(slice_df: pd.DataFrame, color: str) -> tuple[go.Figure, st
         textfont=dict(size=10, color=INK),
         hovertemplate="%{y}<br>%{x:.1f}% of slice<extra></extra>",
     ))
-    fig.update_layout(**base_layout(height=180, l=140, r=30, t=4, b=12))
+    fig.update_layout(**base_layout(height=_h("drivers_chart", 180), l=140, r=30, t=4, b=12))
     fig.update_xaxes(visible=False, range=[0, max(pct.values) * 1.18])
     fig.update_yaxes(autorange="reversed", tickfont=dict(size=10))
     cap = f"{pct.index[0]} dominates this slice ({pct.iloc[0]:.0f}%)."
@@ -514,7 +568,7 @@ def donut_pair(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: str
                            showarrow=False, font=dict(size=18, color=INK))
         # base_layout already sets showlegend=False — don't pass it again here
         # or you get TypeError: multiple values for keyword 'showlegend'.
-        fig.update_layout(**base_layout(height=110, l=4, r=4, t=4, b=4))
+        fig.update_layout(**base_layout(height=_h("donut", 110), l=4, r=4, t=4, b=4))
         return fig
 
     return (_donut(helmet_share, "Helmet not worn"),
@@ -545,14 +599,45 @@ def inject_css() -> None:
     [data-testid="stAppDeployButton"] {{ display: none !important; }}
     /* Tighten the spacing between bands so the dashboard reads as one frame */
     div[data-testid="stVerticalBlock"] {{ gap: 0.5rem; }}
-    .acs-card {{
-      background: {SURFACE}; border: 1px solid {BORDER}; border-radius: 16px;
-      padding: 20px; box-sizing: border-box;
+    /* Streamlit's st.container(border=True) renders this wrapper — style it
+       to match our design tokens (16px radius, light border, generous pad). */
+    div[data-testid="stVerticalBlockBorderWrapper"] {{
+      background: {SURFACE} !important;
+      border: 1px solid {BORDER} !important;
+      border-radius: 16px !important;
+      padding: 16px !important;
+      box-sizing: border-box !important;
+      height: 100% !important;
+      display: flex !important;
+      flex-direction: column !important;
     }}
-    .acs-card.tight {{ padding: 14px 16px; }}
-    .acs-card h2, .acs-card h3, .acs-card .label {{
-      margin: 0; padding: 0; color: {INK};
+    /* Equal-height rows: every column in a row stretches to match the tallest
+       sibling, so the bordered card inside each column ends at the same line. */
+    div[data-testid="stHorizontalBlock"] {{ align-items: stretch !important; }}
+    div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {{
+      display: flex !important;
+      flex-direction: column !important;
     }}
+    div[data-testid="stHorizontalBlock"] > div[data-testid="column"]
+      > div[data-testid="stVerticalBlock"] {{
+      height: 100% !important;
+      display: flex !important;
+      flex-direction: column !important;
+    }}
+    /* The Plotly chart inside a flex container — let it grow to fill */
+    div[data-testid="stVerticalBlockBorderWrapper"]
+      div[data-testid="stPlotlyChart"] {{
+      flex: 1 1 auto !important;
+      min-height: 0 !important;
+    }}
+    /* Compact selectbox + slider — clean borders, no double outlines */
+    div[data-baseweb="select"] {{ border-radius: 10px !important; }}
+    div[data-baseweb="select"] > div {{
+      min-height: 38px !important; font-size: 13px !important;
+      border: 1px solid {BORDER} !important; border-radius: 10px !important;
+      background: {SURFACE} !important;
+    }}
+    div[data-baseweb="select"] > div:focus-within {{ border-color: {INK} !important; }}
     .acs-appbar {{
       display: flex; justify-content: space-between; align-items: center;
       padding: 4px 0 12px 0; border-bottom: 1px solid {BORDER}; margin-bottom: 14px;
@@ -610,9 +695,6 @@ def inject_css() -> None:
       display: inline-block; margin-bottom: 8px;
     }}
     .acs-caption {{ font-size: 11px; color: {MUTED}; margin-top: 4px; }}
-    div[data-baseweb="select"] > div {{
-      min-height: 36px !important; font-size: 13px !important;
-    }}
     label[data-testid="stWidgetLabel"] {{ display: none !important; }}
     div[data-testid="stSlider"] {{ padding-top: 4px; }}
     </style>
@@ -669,46 +751,45 @@ def render_decision_band(slice_df: pd.DataFrame, all_df: pd.DataFrame) -> None:
 
     c1, c2, c3 = st.columns([1.6, 1.0, 1.0])
     with c1:
-        st.markdown(f"""
-        <div class="acs-card">
-          <span class="acs-pill" style="background:{pill_color};">{v.code}</span>
-          <div class="acs-hero">{v.headline}</div>
-          <div class="acs-sub">{v.sub}</div>
-          <div class="acs-kpi-row">
-            <div class="acs-kpi"><div class="label">Your conditions</div>
-              <div class="num" style="color:{pill_color};">{your_disp}</div></div>
-            <div class="acs-kpi"><div class="label">Austin baseline</div>
-              <div class="num">{base_disp}</div></div>
-            <div class="acs-kpi"><div class="label">Matching crashes</div>
-              <div class="num">{n_disp}</div></div>
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown(f"""
+            <span class="acs-pill" style="background:{pill_color};">{v.code}</span>
+            <div class="acs-hero">{v.headline}</div>
+            <div class="acs-sub">{v.sub}</div>
+            <div class="acs-kpi-row">
+              <div class="acs-kpi"><div class="label">Your conditions</div>
+                <div class="num" style="color:{pill_color};">{your_disp}</div></div>
+              <div class="acs-kpi"><div class="label">Austin baseline</div>
+                <div class="num">{base_disp}</div></div>
+              <div class="acs-kpi"><div class="label">Matching crashes</div>
+                <div class="num">{n_disp}</div></div>
+            </div>
+            """, unsafe_allow_html=True)
     with c2:
-        st.markdown('<div class="acs-card tight">', unsafe_allow_html=True)
-        st.markdown('<div class="acs-tile-title">Risk gauge</div>', unsafe_allow_html=True)
-        st.plotly_chart(gauge_chart(v), use_container_width=True,
-                        config={"displayModeBar": False, "responsive": True})
-        if v.code == "INSUFFICIENT":
-            tier, delta_lbl = "Insufficient", f"{v.n} matching crashes"
-        else:
-            score = min(100, (v.ksi_rate / v.baseline) * 50) if v.baseline else 0
-            tier = "Low" if score < 50 else ("Elevated" if score < 75 else "High")
-            delta_lbl = f"{v.delta_pp:+.1f} pp vs baseline"
-        st.markdown(f'<div class="acs-tier">{tier}<span class="delta">{delta_lbl}</span></div>',
-                    unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown('<div class="acs-tile-title">Risk gauge</div>',
+                        unsafe_allow_html=True)
+            st.plotly_chart(gauge_chart(v), use_container_width=True,
+                            config={"displayModeBar": False, "responsive": True})
+            if v.code == "INSUFFICIENT":
+                tier, delta_lbl = "Insufficient", f"{v.n} matching crashes"
+            else:
+                score = min(100, (v.ksi_rate / v.baseline) * 50) if v.baseline else 0
+                tier = "Low" if score < 50 else ("Elevated" if score < 75 else "High")
+                delta_lbl = f"{v.delta_pp:+.1f} pp vs baseline"
+            st.markdown(
+                f'<div class="acs-tier">{tier}<span class="delta">{delta_lbl}</span></div>',
+                unsafe_allow_html=True)
     with c3:
-        items_html = "".join(
-            f'<div class="item"><div class="icon">{ic}</div><div>{msg}</div></div>'
-            for ic, msg in drivers
-        )
-        st.markdown(f"""
-        <div class="acs-card tight">
-          <div class="acs-tile-title">Before you ride</div>
-          <div class="acs-check">{items_html}</div>
-        </div>
-        """, unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown('<div class="acs-tile-title">Before you ride</div>',
+                        unsafe_allow_html=True)
+            items_html = "".join(
+                f'<div class="item"><div class="icon">{ic}</div><div>{msg}</div></div>'
+                for ic, msg in drivers
+            )
+            st.markdown(f'<div class="acs-check">{items_html}</div>',
+                        unsafe_allow_html=True)
 
 
 def render_pattern_band(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: str) -> None:
@@ -716,44 +797,43 @@ def render_pattern_band(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: str
     left, right = st.columns([1.5, 1.0])
 
     with left:
-        st.markdown('<div class="acs-card tight">', unsafe_allow_html=True)
-        st.markdown('<div class="acs-section">Where the risk lives in your data</div>',
-                    unsafe_allow_html=True)
-        r1 = st.columns(3); r2 = st.columns(3)
-        tiles = [
-            ("By hour", lambda: hour_curve_small(slice_df, baseline, color), r1[0]),
-            ("By day of week",
-             lambda: small_multiple(slice_df, baseline, "Day of Week",
-                ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
-                color), r1[1]),
-            ("By roadway part",
-             lambda: small_multiple(slice_df, baseline, "Roadway Part", color=color), r1[2]),
-            ("By speed limit",
-             lambda: small_multiple(slice_df, baseline, "speed_bucket",
-                ["≤25", "30", "35", "40", "≥45"], color), r2[0]),
-            ("By surface",
-             lambda: small_multiple(slice_df, baseline, "Surface Condition", color=color), r2[1]),
-            ("By intersection",
-             lambda: small_multiple(slice_df, baseline, "intersection_bucket",
-                ["Intersection", "Non Intersection", "Other"], color), r2[2]),
-        ]
-        for title, fn, col in tiles:
-            with col:
-                st.markdown(f'<div class="acs-tile-title">{title}</div>', unsafe_allow_html=True)
-                st.plotly_chart(fn(), use_container_width=True,
-                                config={"displayModeBar": False, "responsive": True})
-        st.markdown('</div>', unsafe_allow_html=True)
-
+        with st.container(border=True):
+            st.markdown('<div class="acs-section">Where the risk lives in your data</div>',
+                        unsafe_allow_html=True)
+            r1 = st.columns(3); r2 = st.columns(3)
+            tiles = [
+                ("By hour", lambda: hour_curve_small(slice_df, baseline, color), r1[0]),
+                ("By day of week",
+                 lambda: small_multiple(slice_df, baseline, "Day of Week",
+                    ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+                    color), r1[1]),
+                ("By roadway part",
+                 lambda: small_multiple(slice_df, baseline, "Roadway Part", color=color), r1[2]),
+                ("By speed limit",
+                 lambda: small_multiple(slice_df, baseline, "speed_bucket",
+                    ["≤25", "30", "35", "40", "≥45"], color), r2[0]),
+                ("By surface",
+                 lambda: small_multiple(slice_df, baseline, "Surface Condition", color=color), r2[1]),
+                ("By intersection",
+                 lambda: small_multiple(slice_df, baseline, "intersection_bucket",
+                    ["Intersection", "Non Intersection", "Other"], color), r2[2]),
+            ]
+            for title, fn, col in tiles:
+                with col:
+                    st.markdown(f'<div class="acs-tile-title">{title}</div>',
+                                unsafe_allow_html=True)
+                    st.plotly_chart(fn(), use_container_width=True,
+                                    config={"displayModeBar": False, "responsive": True})
     with right:
-        st.markdown('<div class="acs-card tight">', unsafe_allow_html=True)
-        st.markdown('<div class="acs-section">When risk peaks across the day</div>',
-                    unsafe_allow_html=True)
-        st.plotly_chart(hour_curve(slice_df, all_df, color), use_container_width=True,
-                        config={"displayModeBar": False, "responsive": True})
-        st.markdown('<div class="acs-caption">Dotted line is the citywide baseline. '
-                    'Vertical rule marks the current local hour.</div>',
-                    unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown('<div class="acs-section">When risk peaks across the day</div>',
+                        unsafe_allow_html=True)
+            st.plotly_chart(hour_curve(slice_df, all_df, color), use_container_width=True,
+                            config={"displayModeBar": False, "responsive": True})
+            st.markdown(
+                '<div class="acs-caption">Dotted line is the citywide baseline. '
+                'Vertical rule marks the current local hour.</div>',
+                unsafe_allow_html=True)
 
 
 def render_drivers_strip(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: str) -> None:
@@ -762,42 +842,42 @@ def render_drivers_strip(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: st
     don_helm, don_traf, _, _ = donut_pair(slice_df, all_df, color)
 
     with cols[0]:
-        st.markdown('<div class="acs-card tight">', unsafe_allow_html=True)
-        st.markdown('<div class="acs-tile-title">Severity mix</div>', unsafe_allow_html=True)
-        st.plotly_chart(severity_bar(slice_df, color), use_container_width=True,
-                        config={"displayModeBar": False, "responsive": True})
-        st.markdown('</div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown('<div class="acs-tile-title">Severity mix</div>',
+                        unsafe_allow_html=True)
+            st.plotly_chart(severity_bar(slice_df, color), use_container_width=True,
+                            config={"displayModeBar": False, "responsive": True})
     with cols[1]:
-        st.markdown('<div class="acs-card tight">', unsafe_allow_html=True)
-        st.markdown('<div class="acs-tile-title">Day × hour heatmap</div>',
-                    unsafe_allow_html=True)
-        st.plotly_chart(heatmap(slice_df, color), use_container_width=True,
-                        config={"displayModeBar": False, "responsive": True})
-        st.markdown('</div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown('<div class="acs-tile-title">Day × hour heatmap</div>',
+                        unsafe_allow_html=True)
+            st.plotly_chart(heatmap(slice_df, color), use_container_width=True,
+                            config={"displayModeBar": False, "responsive": True})
     with cols[2]:
-        st.markdown('<div class="acs-card tight">', unsafe_allow_html=True)
-        st.markdown('<div class="acs-tile-title">Roadway breakdown</div>',
-                    unsafe_allow_html=True)
-        st.plotly_chart(rd_fig, use_container_width=True,
-                        config={"displayModeBar": False, "responsive": True})
-        st.markdown(f'<div class="acs-caption">{rd_cap}</div>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown('<div class="acs-tile-title">Roadway breakdown</div>',
+                        unsafe_allow_html=True)
+            st.plotly_chart(rd_fig, use_container_width=True,
+                            config={"displayModeBar": False, "responsive": True})
+            st.markdown(f'<div class="acs-caption">{rd_cap}</div>',
+                        unsafe_allow_html=True)
     with cols[3]:
-        st.markdown('<div class="acs-card tight">', unsafe_allow_html=True)
-        st.markdown('<div class="acs-tile-title">Helmet & traffic exposure</div>',
+        with st.container(border=True):
+            st.markdown('<div class="acs-tile-title">Helmet & traffic exposure</div>',
+                        unsafe_allow_html=True)
+            d1, d2 = st.columns(2)
+            with d1:
+                st.plotly_chart(don_helm, use_container_width=True,
+                                config={"displayModeBar": False, "responsive": True})
+                st.markdown(
+                    '<div class="acs-caption" style="text-align:center;">Helmet not worn</div>',
                     unsafe_allow_html=True)
-        d1, d2 = st.columns(2)
-        with d1:
-            st.plotly_chart(don_helm, use_container_width=True,
-                            config={"displayModeBar": False, "responsive": True})
-            st.markdown('<div class="acs-caption" style="text-align:center;">Helmet not worn</div>',
-                        unsafe_allow_html=True)
-        with d2:
-            st.plotly_chart(don_traf, use_container_width=True,
-                            config={"displayModeBar": False, "responsive": True})
-            st.markdown('<div class="acs-caption" style="text-align:center;">High-traffic exposure</div>',
-                        unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+            with d2:
+                st.plotly_chart(don_traf, use_container_width=True,
+                                config={"displayModeBar": False, "responsive": True})
+                st.markdown(
+                    '<div class="acs-caption" style="text-align:center;">High-traffic exposure</div>',
+                    unsafe_allow_html=True)
 
 
 def render_footer() -> None:
@@ -813,8 +893,15 @@ def render_footer() -> None:
 # ---------- MAIN ----------
 def main() -> None:
     inject_css()
-    df, source = load_data()
 
+    # Capture viewport once on first render, cache in session state.
+    # Heights below adapt to whatever the user's actual screen is.
+    vh, vw = get_viewport()
+    budget = layout_budget(vh)
+    st.session_state.budget = budget
+    st.session_state.is_mobile = vw < 768
+
+    df, source = load_data()
     render_appbar(len(df))
     if "synthetic" in source.lower():
         st.markdown(f'<div class="acs-banner">Data source: {source}. '
