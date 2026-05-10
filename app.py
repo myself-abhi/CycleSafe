@@ -60,23 +60,36 @@ def get_viewport() -> tuple[int, int]:
 
 
 def layout_budget(viewport_h: int) -> dict[str, int]:
-    """Distribute viewport height across the 5 visible bands.
-    Tuned so total content fits inside an 880px viewport without scroll:
-    180 (header+filters+footer) + 220 (decision) + 300 (pattern) + 220 (drivers)
-    + ~30 gaps = ~950 → just slightly over, scroll-free on most desktops.
+    """Distribute the viewport across rows + their internal charts.
+    Each ROW has its own height (decision < pattern > drivers, because pattern
+    holds the dense 2×3 small-multiples grid), but every PANEL within a row
+    is identical to its row-mates. All ratios — no hardcoded pixels.
     """
-    fixed = 180
-    available = max(360, viewport_h - fixed)
-    band2 = max(220, int(available * 0.30))
-    band3 = max(300, int(available * 0.40))
-    band4 = max(220, int(available * 0.30))
+    FIXED = 180   # app bar + filter rail + footer + paddings
+    GAPS  = 28    # ~12 px between each of 3 rows
+    available = max(540, viewport_h - FIXED - GAPS)
+
+    # Per-row ratios — pattern row gets more space for its small-multiples grid
+    decision_card = max(200, int(available * 0.27))   # 3 cards same height
+    pattern_card  = max(300, int(available * 0.40))   # 2 cards same height
+    drivers_card  = max(220, int(available * 0.27))   # 4 cards same height
+
+    # Plotly font sizes scale with viewport — small screens get smaller
+    # axis labels, large screens get bigger. Stays within readable bounds.
+    font_scale = max(0.85, min(1.4, viewport_h / 900))
     return {
-        "decision_card": band2,
-        "gauge": max(120, band2 - 100),     # gauge fits inside decision card
-        "hour_curve": max(160, band3 - 60), # main hour curve fits in pattern card
-        "small_tile": max(80, (band3 - 80) // 2),
-        "drivers_chart": max(110, band4 - 90),
-        "donut": max(80, band4 - 130),
+        "decision_card": decision_card,
+        "pattern_card":  pattern_card,
+        "drivers_card":  drivers_card,
+        "gauge":         max(110, int(decision_card * 0.55)),
+        "hour_curve":    max(180, int(pattern_card  * 0.78)),
+        "small_tile":    max(80,  int(pattern_card  * 0.34)),
+        "drivers_chart": max(110, int(drivers_card  * 0.72)),
+        "donut":         max(80,  int(drivers_card  * 0.50)),
+        # Plotly font sizes — used inside _chart_layout / chart functions
+        "font_chart_title": max(11, int(13 * font_scale)),
+        "font_chart_body":  max(8,  int(10 * font_scale)),
+        "font_chart_tick":  max(8,  int(10 * font_scale)),
     }
 
 # ---------- DATA ----------
@@ -207,7 +220,7 @@ def decide(slice_df: pd.DataFrame, all_df: pd.DataFrame) -> Verdict:
     baseline = float(all_df["is_ksi"].mean())
     if n < MIN_SAMPLE:
         return Verdict(
-            "INSUFFICIENT", "Not enough data — ride with normal caution",
+            "INSUFFICIENT", "Not enough data, ride with normal caution",
             f"Fewer than {MIN_SAMPLE} matching crashes for these conditions ({n} found). "
             f"The dataset can't tell us if these conditions are safer or riskier than typical.",
             MUTED, n, 0.0, baseline, 0.0,
@@ -218,7 +231,7 @@ def decide(slice_df: pd.DataFrame, all_df: pd.DataFrame) -> Verdict:
         head = "Conditions look unusually safe" if delta < -1 else "In line with the Austin baseline"
         return Verdict("GO", head,
             f"Serious-injury rate for these conditions is {ksi*100:.1f}% vs the "
-            f"{baseline*100:.1f}% citywide baseline ({delta:+.1f} pp). Helmet on, lights on — ride.",
+            f"{baseline*100:.1f}% citywide baseline ({delta:+.1f} pp). Helmet on, lights on, ride.",
             GREEN, n, ksi, baseline, delta)
     if delta <= 5:
         return Verdict("CAUTION", "Riskier than typical Austin conditions",
@@ -226,7 +239,7 @@ def decide(slice_df: pd.DataFrame, all_df: pd.DataFrame) -> Verdict:
             f"{baseline*100:.1f}% citywide baseline ({delta:+.1f} pp). Ride with extra caution "
             f"or shift one variable.",
             AMBER, n, ksi, baseline, delta)
-    return Verdict("NO-GO", "Well above the Austin baseline — reconsider",
+    return Verdict("NO-GO", "Well above the Austin baseline, reconsider",
         f"Serious-injury rate for these conditions is {ksi*100:.1f}% vs the "
         f"{baseline*100:.1f}% citywide baseline ({delta:+.1f} pp). Consider waiting, driving, "
         f"or changing route.",
@@ -236,9 +249,9 @@ def decide(slice_df: pd.DataFrame, all_df: pd.DataFrame) -> Verdict:
 def compute_drivers(slice_df: pd.DataFrame, all_df: pd.DataFrame) -> list[tuple[str, str]]:
     if len(slice_df) < MIN_SAMPLE:
         return [
-            ("⚠️", "Sample is too small for confident drivers — defaulting to baseline precautions."),
+            ("⚠️", "Sample is too small for confident drivers; defaulting to baseline precautions."),
             ("✅", "Helmet on, lights on, bright/visible clothing."),
-            ("✅", "Stay off main travel lanes when possible — they account for most crashes citywide."),
+            ("✅", "Stay off main travel lanes when possible. They account for most crashes citywide."),
         ]
     items: list[tuple[str, str]] = []
     base = float(all_df["is_ksi"].mean())
@@ -247,17 +260,17 @@ def compute_drivers(slice_df: pd.DataFrame, all_df: pd.DataFrame) -> list[tuple[
     worst = by_hour[by_hour.n >= 10].sort_values("ksi", ascending=False)
     if len(worst) and worst.iloc[0].ksi >= 1.5 * base:
         h = int(worst.index[0])
-        items.append(("⚠️", f"Avoid {h:02d}:00–{(h+1) % 24:02d}:00 — worst hour in your filter at "
+        items.append(("⚠️", f"Avoid {h:02d}:00 to {(h+1) % 24:02d}:00. Worst hour in your filter at "
                             f"{worst.iloc[0].ksi * 100:.0f}% serious-injury rate."))
 
     rd = slice_df["Roadway Part"].value_counts(normalize=True)
     if len(rd) and rd.iloc[0] > 0.40:
-        items.append(("⚠️", f"Stay off {rd.index[0]} — accounts for {rd.iloc[0] * 100:.0f}% of "
+        items.append(("⚠️", f"Stay off {rd.index[0]}. Accounts for {rd.iloc[0] * 100:.0f}% of "
                             f"crashes in your filter."))
 
     helmet_share = (slice_df["helmet"] == "Not Worn").mean()
     if helmet_share > 0.30:
-        items.append(("✅", f"Helmet on — {helmet_share * 100:.0f}% of riders in these crashes "
+        items.append(("✅", f"Helmet on. {helmet_share * 100:.0f}% of riders in these crashes "
                             f"weren't wearing one."))
 
     valid_tr = all_df["Average Daily Traffic Amount"].dropna()
@@ -267,29 +280,29 @@ def compute_drivers(slice_df: pd.DataFrame, all_df: pd.DataFrame) -> list[tuple[
         if len(slice_tr):
             high = (slice_tr >= q3).mean()
             if high > 0.25:
-                items.append(("⚠️", f"High-traffic streets dominate this slice ({high * 100:.0f}%) "
-                                    f"— pick lower-traffic alternates."))
+                items.append(("⚠️", f"High-traffic streets dominate this slice ({high * 100:.0f}%); "
+                                    f"pick lower-traffic alternates."))
 
     base_c = (all_df["Construction Zone Flag"] == "Yes").mean()
     sl_c = (slice_df["Construction Zone Flag"] == "Yes").mean()
     if base_c > 0 and sl_c >= 2 * base_c and sl_c > 0.05:
-        items.append(("⚠️", f"Construction zones overrepresented — {sl_c * 100:.0f}% of these crashes."))
+        items.append(("⚠️", f"Construction zones overrepresented. {sl_c * 100:.0f}% of these crashes."))
 
     base_s = (all_df["Active School Zone Flag"] == "Yes").mean()
     sl_s = (slice_df["Active School Zone Flag"] == "Yes").mean()
     if base_s > 0 and sl_s >= 2 * base_s and sl_s > 0.03:
-        items.append(("⚠️", f"School zones flagged in {sl_s * 100:.0f}% of these crashes — "
+        items.append(("⚠️", f"School zones flagged in {sl_s * 100:.0f}% of these crashes; "
                             f"extra vigilance during arrival/dismissal."))
 
     if not any("Helmet" in s or "helmet" in s for _, s in items):
-        items.append(("✅", f"Helmet check — {helmet_share * 100:.0f}% of riders in these crashes "
+        items.append(("✅", f"Helmet check. {helmet_share * 100:.0f}% of riders in these crashes "
                             f"weren't wearing one."))
 
     while len(items) < 3:
         extras = [
             ("✅", "Lights on, bright clothing, signal turns clearly."),
-            ("✅", "Assume drivers don't see you — eye contact at intersections."),
-            ("✅", "Avoid riding right after rain — wet pavement adds risk."),
+            ("✅", "Assume drivers don't see you. Eye contact at intersections."),
+            ("✅", "Avoid riding right after rain. Wet pavement adds risk."),
         ]
         for e in extras:
             if e not in items and len(items) < 3:
@@ -320,12 +333,18 @@ def apply_filters(df: pd.DataFrame, f: dict) -> pd.DataFrame:
 
 # ---------- CHART HELPERS ----------
 def base_layout(height: int = 220, b: int = 28, t: int = 20, l: int = 36, r: int = 8) -> dict:
+    # Plotly font sizes pulled from the viewport-aware budget — smaller on
+    # phones, larger on 4K — so chart text auto-scales with the device.
+    f_body = _h("font_chart_body", 10)
+    f_tick = _h("font_chart_tick", 10)
     return dict(
         margin=dict(l=l, r=r, t=t, b=b),
         paper_bgcolor=SURFACE, plot_bgcolor=SURFACE,
         height=height, showlegend=False, autosize=False,
-        font=dict(family=FONT, size=10, color=BODY),
+        font=dict(family=FONT, size=f_body, color=BODY),
         hoverlabel=dict(bgcolor=INK, font_color="white", font_family=FONT),
+        xaxis=dict(automargin=True, tickfont=dict(size=f_tick, color=BODY)),
+        yaxis=dict(automargin=True, tickfont=dict(size=f_tick, color=BODY)),
     )
 
 
@@ -690,64 +709,95 @@ def inject_css() -> None:
       display: flex; justify-content: space-between; align-items: center;
       padding: 4px 0 12px 0; border-bottom: 1px solid {BORDER}; margin-bottom: 14px;
     }}
-    .acs-appbar .brand {{ font-weight: 700; color: {INK}; font-size: 18px; letter-spacing: -0.01em; }}
-    .acs-appbar .meta {{ font-size: 11px; color: {MUTED}; text-transform: uppercase; letter-spacing: 0.06em; }}
+    /* FLUID TYPOGRAPHY — every text size uses clamp(min, vw-scaled, max)
+       so it shrinks gracefully on phones and grows on 4K, without any
+       hardcoded pixel sizes that could break on extreme viewports. */
+    .acs-appbar .brand {{
+      font-weight: 700; color: {INK};
+      font-size: clamp(15px, 1.2vw, 20px); letter-spacing: -0.01em;
+    }}
+    .acs-appbar .meta {{
+      font-size: clamp(9px, 0.75vw, 12px); color: {MUTED};
+      text-transform: uppercase; letter-spacing: 0.06em;
+    }}
     .acs-flabel {{
-      font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
-      color: {MUTED}; margin: 0 0 4px 0; font-weight: 600;
+      font-size: clamp(9px, 0.75vw, 12px); text-transform: uppercase;
+      letter-spacing: 0.08em; color: {MUTED}; margin: 0 0 4px 0; font-weight: 600;
     }}
     .acs-pill {{
       display: inline-block; padding: 4px 10px; border-radius: 6px;
-      color: white; font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
-      text-transform: uppercase; margin-bottom: 12px;
+      color: white; font-size: clamp(10px, 0.78vw, 12px); font-weight: 700;
+      letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 10px;
     }}
     .acs-hero {{
-      font-size: 30px; line-height: 1.2; font-weight: 700; color: {INK};
-      letter-spacing: -0.01em; margin: 0 0 8px 0;
+      font-size: clamp(20px, 2.0vw, 34px); line-height: 1.2; font-weight: 700;
+      color: {INK}; letter-spacing: -0.01em; margin: 0 0 6px 0;
     }}
-    .acs-sub {{ font-size: 13px; line-height: 1.55; color: {BODY}; margin: 0 0 14px 0; }}
-    .acs-kpi-row {{ display: flex; gap: 16px; padding-top: 12px; border-top: 1px solid {BORDER}; }}
-    .acs-kpi {{ flex: 1; }}
+    .acs-sub {{
+      font-size: clamp(11px, 0.92vw, 14px); line-height: 1.5;
+      color: {BODY}; margin: 0 0 10px 0;
+    }}
+    .acs-kpi-row {{
+      display: flex; gap: clamp(8px, 1vw, 18px);
+      padding-top: 10px; border-top: 1px solid {BORDER};
+    }}
+    .acs-kpi {{ flex: 1; min-width: 0; }}
     .acs-kpi .label {{
-      font-size: 10px; color: {MUTED}; text-transform: uppercase;
-      letter-spacing: 0.08em; font-weight: 600; margin-bottom: 4px;
+      font-size: clamp(8px, 0.7vw, 10.5px); color: {MUTED};
+      text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600;
+      margin-bottom: 4px;
     }}
-    .acs-kpi .num {{ font-size: 24px; color: {INK}; font-weight: 700; line-height: 1; }}
+    .acs-kpi .num {{
+      font-size: clamp(16px, 1.55vw, 26px); color: {INK};
+      font-weight: 700; line-height: 1;
+    }}
     .acs-section {{
-      font-size: 14px; color: {INK}; font-weight: 700; margin: 0 0 8px 0;
-      letter-spacing: -0.005em;
+      font-size: clamp(12px, 1.0vw, 16px); color: {INK}; font-weight: 700;
+      margin: 0 0 6px 0; letter-spacing: -0.005em;
     }}
     .acs-tile-title {{
-      font-size: 10px; color: {MUTED}; text-transform: uppercase;
-      letter-spacing: 0.08em; font-weight: 600; margin: 0 0 4px 0;
+      font-size: clamp(8px, 0.7vw, 11px); color: {MUTED};
+      text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600;
+      margin: 0 0 4px 0;
     }}
-    .acs-check {{ display: flex; flex-direction: column; gap: 10px; }}
+    .acs-check {{ display: flex; flex-direction: column; gap: 8px; }}
     .acs-check .item {{
-      display: flex; align-items: flex-start; gap: 10px; font-size: 13px;
-      line-height: 1.45; color: {BODY};
+      display: flex; align-items: flex-start; gap: 8px;
+      font-size: clamp(11px, 0.92vw, 14px); line-height: 1.45; color: {BODY};
     }}
-    .acs-check .icon {{ flex: 0 0 auto; font-size: 14px; line-height: 1.4; }}
+    .acs-check .icon {{
+      flex: 0 0 auto; font-size: clamp(12px, 1vw, 15px); line-height: 1.4;
+    }}
     .acs-gauge-value {{
-      text-align: center; font-size: 28px; font-weight: 700;
-      line-height: 1; margin: 2px 0 6px 0; letter-spacing: -0.01em;
+      text-align: center; font-size: clamp(20px, 1.85vw, 32px);
+      font-weight: 700; line-height: 1; margin: 2px 0 4px 0;
+      letter-spacing: -0.01em;
     }}
-    .acs-gauge-value .suffix {{ font-size: 13px; color: {MUTED}; font-weight: 500; }}
+    .acs-gauge-value .suffix {{
+      font-size: clamp(10px, 0.85vw, 14px); color: {MUTED}; font-weight: 500;
+    }}
     .acs-tier {{
-      text-align: center; font-size: 12px; color: {INK}; font-weight: 600;
-      letter-spacing: 0.04em; text-transform: uppercase; margin-top: 2px;
+      text-align: center; font-size: clamp(10px, 0.85vw, 13px);
+      color: {INK}; font-weight: 600; letter-spacing: 0.04em;
+      text-transform: uppercase; margin-top: 2px;
     }}
-    .acs-tier .delta {{ display: block; font-size: 11px; font-weight: 500;
-      color: {MUTED}; text-transform: none; letter-spacing: 0; margin-top: 2px; }}
+    .acs-tier .delta {{
+      display: block; font-size: clamp(9px, 0.78vw, 12px); font-weight: 500;
+      color: {MUTED}; text-transform: none; letter-spacing: 0; margin-top: 2px;
+    }}
     .acs-footer {{
-      font-size: 11px; color: {MUTED}; padding-top: 10px;
-      border-top: 1px solid {BORDER}; margin-top: 12px; letter-spacing: 0.02em;
+      font-size: clamp(9px, 0.78vw, 12px); color: {MUTED};
+      padding-top: 8px; border-top: 1px solid {BORDER};
+      margin-top: 10px; letter-spacing: 0.02em;
     }}
     .acs-banner {{
-      font-size: 11px; color: {MUTED}; padding: 4px 8px;
-      background: {CARD}; border: 1px solid {BORDER}; border-radius: 6px;
-      display: inline-block; margin-bottom: 8px;
+      font-size: clamp(9px, 0.78vw, 12px); color: {MUTED};
+      padding: 4px 8px; background: {CARD}; border: 1px solid {BORDER};
+      border-radius: 6px; display: inline-block; margin-bottom: 8px;
     }}
-    .acs-caption {{ font-size: 11px; color: {MUTED}; margin-top: 4px; }}
+    .acs-caption {{
+      font-size: clamp(9px, 0.78vw, 12px); color: {MUTED}; margin-top: 4px;
+    }}
     label[data-testid="stWidgetLabel"] {{ display: none !important; }}
     div[data-testid="stSlider"] {{ padding-top: 4px; }}
     </style>
@@ -798,7 +848,7 @@ def render_decision_band(slice_df: pd.DataFrame, all_df: pd.DataFrame) -> None:
     v = decide(slice_df, all_df)
     drivers = compute_drivers(slice_df, all_df)
     pill_color = {"GO": GREEN, "CAUTION": AMBER, "NO-GO": RED, "INSUFFICIENT": MUTED}[v.code]
-    your_disp = f"{v.ksi_rate*100:.1f}%" if v.code != "INSUFFICIENT" else "—"
+    your_disp = f"{v.ksi_rate*100:.1f}%" if v.code != "INSUFFICIENT" else "n/a"
     base_disp = f"{v.baseline*100:.1f}%"
     n_disp = f"{v.n:,}"
 
@@ -806,7 +856,8 @@ def render_decision_band(slice_df: pd.DataFrame, all_df: pd.DataFrame) -> None:
     # to the same explicit pixel height.
     st.markdown('<div class="acs-row-marker acs-row-decision"></div>',
                 unsafe_allow_html=True)
-    DECISION_H = 220  # ALL three cards in this row use exactly this height
+    # Row height pulled from session-state budget — adapts to viewport size
+    DECISION_H = _h("decision_card", 220)
     c1, c2, c3 = st.columns([1.6, 1.0, 1.0])
     with c1:
         with st.container(border=True, height=DECISION_H):
@@ -834,7 +885,7 @@ def render_decision_band(slice_df: pd.DataFrame, all_df: pd.DataFrame) -> None:
             # the card width since it's plain text inside flex layout.
             if v.code == "INSUFFICIENT":
                 tier, delta_lbl = "Insufficient", f"{v.n} matching crashes"
-                score_disp = "—"
+                score_disp = "n/a"
             else:
                 tier = "Low" if score < 50 else ("Elevated" if score < 75 else "High")
                 delta_lbl = f"{v.delta_pp:+.1f} pp vs baseline"
@@ -861,7 +912,7 @@ def render_pattern_band(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: str
     baseline = float(all_df["is_ksi"].mean())
     st.markdown('<div class="acs-row-marker acs-row-pattern"></div>',
                 unsafe_allow_html=True)
-    PATTERN_H = 300  # BOTH cards in this row use exactly this height
+    PATTERN_H = _h("pattern_card", 300)
     left, right = st.columns([1.5, 1.0])
 
     with left:
@@ -907,7 +958,7 @@ def render_pattern_band(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: str
 def render_drivers_strip(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: str) -> None:
     st.markdown('<div class="acs-row-marker acs-row-drivers"></div>',
                 unsafe_allow_html=True)
-    DRIVERS_H = 220  # ALL four cards in this row use exactly this height
+    DRIVERS_H = _h("drivers_card", 220)
     cols = st.columns(4)
     rd_fig, rd_cap = roadway_breakdown(slice_df, color)
     don_helm, don_traf, _, _ = donut_pair(slice_df, all_df, color)
