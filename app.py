@@ -414,21 +414,19 @@ st.markdown(
     transform: translateY(-1px);
     box-shadow: 0 2px 6px rgba(17,24,39,0.08), 0 4px 12px rgba(17,24,39,0.04);
   }}
-  /* Chart card — viewport-relative height via calc() that grows with screen
-     while always staying visible. No flex collapse, no autosize drift. */
+  /* Chart card — every panel locked to the same height via calc(). Zero
+     margin so chart rows sit flush against each other. */
   div[data-testid="stPlotlyChart"] {{
     background: {SURFACE};
     border: 1px solid {BORDER};
     border-radius: 10px;
     padding: 4px 6px 2px 6px;
     box-shadow: 0 1px 2px rgba(17,24,39,0.04), 0 1px 4px rgba(17,24,39,0.03);
-    margin: 0 0 4px 0 !important;
+    margin: 0 !important;
     box-sizing: border-box;
     overflow: hidden !important;
-    /* Viewport math: (full height - header 80 - hero 80 - insights 90 -
-       CTA 70 - paddings 30) / 2 rows = each row's max height. Capped at
-       a sane min/max so it doesn't collapse or balloon. */
-    height: clamp(220px, calc((100vh - 350px) / 2), 420px);
+    /* Same calc on every panel → all 4 are exactly the same size */
+    height: clamp(220px, calc((100vh - 350px) / 2), 420px) !important;
     min-height: 220px;
   }}
   /* Every nested Plotly element fills the card 100%. Plotly's responsive
@@ -447,12 +445,25 @@ st.markdown(
     width: 100% !important;
     overflow: hidden !important;
   }}
-  /* Column wrappers around chart cards: just kill overflow, don't flex.
-     Chart cards size themselves via calc() height. */
+  /* Column wrappers around chart cards: just kill overflow, don't flex. */
   div[data-testid="column"]:has(div[data-testid="stPlotlyChart"]) {{
     overflow: hidden !important;
     min-height: 0 !important;
     min-width: 0 !important;
+  }}
+  /* Kill ALL margin/gap between consecutive chart rows so the upper
+     and lower row sit flush against each other. */
+  div[data-testid="stHorizontalBlock"]:has(div[data-testid="stPlotlyChart"]) {{
+    margin: 0 !important;
+    padding: 0 !important;
+    gap: 4px !important;
+  }}
+  /* The stVerticalBlock wrapping the two chart rows: reduce its gap to 0
+     between consecutive chart-row blocks. */
+  div[data-testid="stVerticalBlock"]:has(> div[data-testid="stHorizontalBlock"]
+    > div[data-testid="column"] > div[data-testid="stVerticalBlock"]
+    > div[data-testid="stPlotlyChart"]) {{
+    gap: 4px !important;
   }}
 
   /* ===== MOBILE: stack 2x2 grid into 1-column. Allow page scroll. ===== */
