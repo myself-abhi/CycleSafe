@@ -631,13 +631,20 @@ def inject_css() -> None:
       min-height: 0 !important;
     }}
 
-    /* Row markers are 0-height and invisible; CSS uses :has() to find the
-       row block immediately following each marker and apply explicit pixel
-       heights to every card in that row. Same height for every card in a
-       row → all card outlines visually identical. */
+    /* Row markers are 0-height and invisible (kept for backwards compat). */
     .acs-row-marker {{
       height: 0 !important; margin: 0 !important; padding: 0 !important;
       display: block !important;
+    }}
+    /* Hide the internal scrollbar that st.container(height=N) creates.
+       Card heights are explicit; content always fits because charts inside
+       are sized to fit. No need for scroll. */
+    div[data-testid="stVerticalBlockBorderWrapper"] {{
+      overflow: hidden !important;
+    }}
+    div[data-testid="stVerticalBlockBorderWrapper"]
+      > div[data-testid="stVerticalBlock"] {{
+      overflow: hidden !important;
     }}
     /* Decision row (3 cards) — taller to accommodate verdict + KPI strip.
        `+` (adjacent sibling) targets ONLY the row block immediately after
@@ -791,9 +798,10 @@ def render_decision_band(slice_df: pd.DataFrame, all_df: pd.DataFrame) -> None:
     # to the same explicit pixel height.
     st.markdown('<div class="acs-row-marker acs-row-decision"></div>',
                 unsafe_allow_html=True)
+    DECISION_H = 290  # ALL three cards in this row use exactly this height
     c1, c2, c3 = st.columns([1.6, 1.0, 1.0])
     with c1:
-        with st.container(border=True):
+        with st.container(border=True, height=DECISION_H):
             st.markdown(f"""
             <span class="acs-pill" style="background:{pill_color};">{v.code}</span>
             <div class="acs-hero">{v.headline}</div>
@@ -808,7 +816,7 @@ def render_decision_band(slice_df: pd.DataFrame, all_df: pd.DataFrame) -> None:
             </div>
             """, unsafe_allow_html=True)
     with c2:
-        with st.container(border=True):
+        with st.container(border=True, height=DECISION_H):
             st.markdown('<div class="acs-tile-title">Risk gauge</div>',
                         unsafe_allow_html=True)
             st.plotly_chart(gauge_chart(v), use_container_width=True,
@@ -823,7 +831,7 @@ def render_decision_band(slice_df: pd.DataFrame, all_df: pd.DataFrame) -> None:
                 f'<div class="acs-tier">{tier}<span class="delta">{delta_lbl}</span></div>',
                 unsafe_allow_html=True)
     with c3:
-        with st.container(border=True):
+        with st.container(border=True, height=DECISION_H):
             st.markdown('<div class="acs-tile-title">Before you ride</div>',
                         unsafe_allow_html=True)
             items_html = "".join(
@@ -838,10 +846,11 @@ def render_pattern_band(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: str
     baseline = float(all_df["is_ksi"].mean())
     st.markdown('<div class="acs-row-marker acs-row-pattern"></div>',
                 unsafe_allow_html=True)
+    PATTERN_H = 380  # BOTH cards in this row use exactly this height
     left, right = st.columns([1.5, 1.0])
 
     with left:
-        with st.container(border=True):
+        with st.container(border=True, height=PATTERN_H):
             st.markdown('<div class="acs-section">Where the risk lives in your data</div>',
                         unsafe_allow_html=True)
             r1 = st.columns(3); r2 = st.columns(3)
@@ -869,7 +878,7 @@ def render_pattern_band(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: str
                     st.plotly_chart(fn(), use_container_width=True,
                                     config={"displayModeBar": False, "responsive": True})
     with right:
-        with st.container(border=True):
+        with st.container(border=True, height=PATTERN_H):
             st.markdown('<div class="acs-section">When risk peaks across the day</div>',
                         unsafe_allow_html=True)
             st.plotly_chart(hour_curve(slice_df, all_df, color), use_container_width=True,
@@ -883,24 +892,25 @@ def render_pattern_band(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: str
 def render_drivers_strip(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: str) -> None:
     st.markdown('<div class="acs-row-marker acs-row-drivers"></div>',
                 unsafe_allow_html=True)
+    DRIVERS_H = 270  # ALL four cards in this row use exactly this height
     cols = st.columns(4)
     rd_fig, rd_cap = roadway_breakdown(slice_df, color)
     don_helm, don_traf, _, _ = donut_pair(slice_df, all_df, color)
 
     with cols[0]:
-        with st.container(border=True):
+        with st.container(border=True, height=DRIVERS_H):
             st.markdown('<div class="acs-tile-title">Severity mix</div>',
                         unsafe_allow_html=True)
             st.plotly_chart(severity_bar(slice_df, color), use_container_width=True,
                             config={"displayModeBar": False, "responsive": True})
     with cols[1]:
-        with st.container(border=True):
+        with st.container(border=True, height=DRIVERS_H):
             st.markdown('<div class="acs-tile-title">Day × hour heatmap</div>',
                         unsafe_allow_html=True)
             st.plotly_chart(heatmap(slice_df, color), use_container_width=True,
                             config={"displayModeBar": False, "responsive": True})
     with cols[2]:
-        with st.container(border=True):
+        with st.container(border=True, height=DRIVERS_H):
             st.markdown('<div class="acs-tile-title">Roadway breakdown</div>',
                         unsafe_allow_html=True)
             st.plotly_chart(rd_fig, use_container_width=True,
@@ -908,7 +918,7 @@ def render_drivers_strip(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: st
             st.markdown(f'<div class="acs-caption">{rd_cap}</div>',
                         unsafe_allow_html=True)
     with cols[3]:
-        with st.container(border=True):
+        with st.container(border=True, height=DRIVERS_H):
             st.markdown('<div class="acs-tile-title">Helmet & traffic exposure</div>',
                         unsafe_allow_html=True)
             d1, d2 = st.columns(2)
