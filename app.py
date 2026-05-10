@@ -630,6 +630,44 @@ def inject_css() -> None:
       flex: 1 1 auto !important;
       min-height: 0 !important;
     }}
+
+    /* Row markers are 0-height and invisible; CSS uses :has() to find the
+       row block immediately following each marker and apply explicit pixel
+       heights to every card in that row. Same height for every card in a
+       row → all card outlines visually identical. */
+    .acs-row-marker {{
+      height: 0 !important; margin: 0 !important; padding: 0 !important;
+      display: block !important;
+    }}
+    /* Decision row (3 cards) — taller to accommodate verdict + KPI strip.
+       `+` (adjacent sibling) targets ONLY the row block immediately after
+       the marker, not every following row. */
+    div[data-testid="stElementContainer"]:has(.acs-row-decision)
+      + div[data-testid="stHorizontalBlock"]
+      div[data-testid="stVerticalBlockBorderWrapper"] {{
+      height: 290px !important;
+      min-height: 290px !important;
+      max-height: 290px !important;
+      overflow: hidden;
+    }}
+    /* Pattern row (2 cards) — tallest, holds small-multiples grid + curve */
+    div[data-testid="stElementContainer"]:has(.acs-row-pattern)
+      + div[data-testid="stHorizontalBlock"]
+      div[data-testid="stVerticalBlockBorderWrapper"] {{
+      height: 380px !important;
+      min-height: 380px !important;
+      max-height: 380px !important;
+      overflow: hidden;
+    }}
+    /* Drivers row (4 cards) — compact for severity/heatmap/breakdown/donuts */
+    div[data-testid="stElementContainer"]:has(.acs-row-drivers)
+      + div[data-testid="stHorizontalBlock"]
+      div[data-testid="stVerticalBlockBorderWrapper"] {{
+      height: 260px !important;
+      min-height: 260px !important;
+      max-height: 260px !important;
+      overflow: hidden;
+    }}
     /* Compact selectbox + slider — clean borders, no double outlines */
     div[data-baseweb="select"] {{ border-radius: 10px !important; }}
     div[data-baseweb="select"] > div {{
@@ -749,6 +787,10 @@ def render_decision_band(slice_df: pd.DataFrame, all_df: pd.DataFrame) -> None:
     base_disp = f"{v.baseline*100:.1f}%"
     n_disp = f"{v.n:,}"
 
+    # Marker — CSS uses :has() to find this and lock all cards in this row
+    # to the same explicit pixel height.
+    st.markdown('<div class="acs-row-marker acs-row-decision"></div>',
+                unsafe_allow_html=True)
     c1, c2, c3 = st.columns([1.6, 1.0, 1.0])
     with c1:
         with st.container(border=True):
@@ -794,6 +836,8 @@ def render_decision_band(slice_df: pd.DataFrame, all_df: pd.DataFrame) -> None:
 
 def render_pattern_band(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: str) -> None:
     baseline = float(all_df["is_ksi"].mean())
+    st.markdown('<div class="acs-row-marker acs-row-pattern"></div>',
+                unsafe_allow_html=True)
     left, right = st.columns([1.5, 1.0])
 
     with left:
@@ -837,6 +881,8 @@ def render_pattern_band(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: str
 
 
 def render_drivers_strip(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: str) -> None:
+    st.markdown('<div class="acs-row-marker acs-row-drivers"></div>',
+                unsafe_allow_html=True)
     cols = st.columns(4)
     rd_fig, rd_cap = roadway_breakdown(slice_df, color)
     don_helm, don_traf, _, _ = donut_pair(slice_df, all_df, color)
