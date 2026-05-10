@@ -35,7 +35,6 @@ st.set_page_config(
 def synthesize_data(n: int = 2463, seed: int = 42) -> pd.DataFrame:
     """Plausible Austin crash rows when CSV is missing."""
     rng = np.random.default_rng(seed)
-    # hour distribution biased toward rush hours
     hour_choices = (
         [7, 8, 9] * int(n * 0.06) + [17, 18, 19] * int(n * 0.07) +
         list(range(10, 16)) * int(n * 0.05) + [20, 21, 22] * int(n * 0.03) +
@@ -99,7 +98,6 @@ def load_data() -> tuple[pd.DataFrame, str]:
     except Exception:
         df, source = synthesize_data(), "synthetic fallback (CSV unreadable)"
 
-    # Coercions
     df["Average Daily Traffic Amount"] = pd.to_numeric(
         df["Average Daily Traffic Amount"], errors="coerce")
     crash_t = pd.to_numeric(df["Crash Time"], errors="coerce").fillna(-1).astype(int)
@@ -332,7 +330,8 @@ def hour_curve(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: str) -> go.F
         x=hours_idx, y=cur, mode="lines+markers",
         line=dict(color=color, width=2.4, shape="spline"),
         marker=dict(color=color, size=6, line=dict(color="white", width=1.5)),
-        fill="tozeroy", fillcolor=f"rgba({int(color[1:3], 16)},{int(color[3:5], 16)},{int(color[5:7], 16)},0.10)",
+        fill="tozeroy",
+        fillcolor=f"rgba({int(color[1:3], 16)},{int(color[3:5], 16)},{int(color[5:7], 16)},0.10)",
         hovertemplate="%{x:02d}:00<br>%{y:.1f}% serious-injury<br>%{customdata} crashes<extra></extra>",
         customdata=cur_n.values, name="Slice",
     ))
@@ -367,7 +366,7 @@ def small_multiple(slice_df: pd.DataFrame, baseline: float, dim: str,
     rates = grp["ksi"].values * 100
     bar_colors = [color if r > baseline * 100 else "#D1D5DB" for r in rates]
     fig = go.Figure(go.Bar(
-        x=[str(i) for i in grp.index], y=rates, marker_color=bar_colors,
+        x=[str(i)[:10] for i in grp.index], y=rates, marker_color=bar_colors,
         hovertemplate="%{x}<br>%{y:.1f}% KSI<br>%{customdata} crashes<extra></extra>",
         customdata=grp["n"].values, width=0.7,
     ))
@@ -406,9 +405,10 @@ def severity_bar(slice_df: pd.DataFrame, color: str) -> go.Figure:
              "Possible Injury", "Not Injured"]
     counts = slice_df["Crash Severity"].value_counts().reindex(order, fill_value=0)
     colors = [color, color, "#D1D5DB", "#D1D5DB", "#D1D5DB"]
+    labels = [s.replace("Incapacitating", "Incap.").replace("Non-Incap. Injury", "Non-incap.")
+              for s in counts.index]
     fig = go.Figure(go.Bar(
-        y=[s.replace("Incapacitating", "Incap.").replace("Non-Incap.", "Non-incap.") for s in counts.index],
-        x=counts.values, orientation="h", marker_color=colors,
+        y=labels, x=counts.values, orientation="h", marker_color=colors,
         text=counts.values, textposition="outside", textfont=dict(size=10, color=INK),
         hovertemplate="%{y}<br>%{x} crashes<extra></extra>",
     ))
@@ -421,36 +421,51 @@ def severity_bar(slice_df: pd.DataFrame, color: str) -> go.Figure:
 def heatmap(slice_df: pd.DataFrame, color: str) -> go.Figure:
     if len(slice_df) == 0:
         return empty_fig(height=180)
-    days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-    day_map = dict(zip(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
-                        "Saturday", "Sunday"], days))
-    df2 = slice_df.copy()
-    df2["d_short"] = df2["Day of Week"].map(day_map)
-    grp = df2.groupby(["d_short", "hour"]).agg(n=("is_ksi", "size"),
-                                               ksi=("is_ksi", "mean")).reset_index()
-    z = np.full((7, 24), np.nan)
-    counts = np.zeros((7, 24), dtype=int)
-    for _, r in grp.iterrows():
-        if r["d_short"] not in days: continue
-        i = days.index(r["d_short"]); j = int(r["hour"])
-        counts[i, j] = r["n"]
-        if r["n"] >= 5:
-            z[i, j] = r["ksi"] * 100
-    rgb = tuple(int(color[k:k+2], 16) for k in (1, 3, 5))
-    colorscale = [[0, "rgba(255,255,255,0)"],
-                  [0.001, f"rgba({rgb[0]},{rgb[1]},{rgb[2]},0.10)"],
-                  [1, f"rgba({rgb[0]},{rgb[1]},{rgb[2]},1)"]]
-    fig = go.Figure(go.Heatmap(
-        z=z, x=list(range(24)), y=days, colorscale=colorscale,
-        showscale=False, customdata=counts,
-        hovertemplate="%{y} %{x:02d}:00<br>%{z:.0f}% KSI<br>%{customdata} crashes<extra></extra>",
-        zmin=0, zmax=max(40, np.nanmax(z) if not np.isnan(z).all() else 40),
-        xgap=1, ygap=1,
-    ))
-    fig.update_layout(**base_layout(height=180, l=32, r=4, t=4, b=22))
-    fig.update_xaxes(dtick=4, tickfont=dict(size=8), showgrid=False)
-    fig.update_yaxes(tickfont=dict(size=9), showgrid=False)
-    return fig
+    try:
+        days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        day_map = dict(zip(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
+                            "Saturday", "Sunday"], days))
+        df2 = slice_df.copy()
+        df2["d_short"] = df2["Day of Week"].map(day_map)
+        df2 = df2.dropna(subset=["d_short"])
+        if len(df2) == 0:
+            return empty_fig(height=180)
+        grp = df2.groupby(["d_short", "hour"]).agg(
+            n=("is_ksi", "size"), ksi=("is_ksi", "mean")).reset_index()
+        z = np.full((7, 24), np.nan)
+        counts = np.zeros((7, 24), dtype=int)
+        for _, r in grp.iterrows():
+            if r["d_short"] not in days:
+                continue
+            try:
+                i = days.index(r["d_short"]); j = int(r["hour"])
+            except (ValueError, TypeError):
+                continue
+            if not (0 <= j < 24):
+                continue
+            counts[i, j] = int(r["n"])
+            if r["n"] >= 5:
+                z[i, j] = float(r["ksi"]) * 100
+        if np.isnan(z).all():
+            zmax_val = 40.0
+        else:
+            zmax_val = max(40.0, float(np.nanmax(z)))
+        rgb = tuple(int(color[k:k + 2], 16) for k in (1, 3, 5))
+        colorscale = [[0.0, "rgba(255,255,255,0)"],
+                      [0.001, f"rgba({rgb[0]},{rgb[1]},{rgb[2]},0.10)"],
+                      [1.0, f"rgba({rgb[0]},{rgb[1]},{rgb[2]},1)"]]
+        fig = go.Figure(go.Heatmap(
+            z=z, x=list(range(24)), y=days, colorscale=colorscale,
+            showscale=False, customdata=counts,
+            hovertemplate="%{y} %{x:02d}:00<br>%{z:.0f}% KSI<br>%{customdata} crashes<extra></extra>",
+            zmin=0, zmax=zmax_val, xgap=1, ygap=1,
+        ))
+        fig.update_layout(**base_layout(height=180, l=32, r=4, t=4, b=22))
+        fig.update_xaxes(dtick=4, tickfont=dict(size=8), showgrid=False)
+        fig.update_yaxes(tickfont=dict(size=9), showgrid=False)
+        return fig
+    except Exception:
+        return empty_fig(height=180, msg="Heatmap unavailable for this slice")
 
 
 def roadway_breakdown(slice_df: pd.DataFrame, color: str) -> tuple[go.Figure, str]:
@@ -485,7 +500,10 @@ def donut_pair(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: str
         traffic_share = 0
 
     def _donut(share: float, lab: str) -> go.Figure:
-        share_pct = max(0, min(100, share * 100))
+        # Defensive: if mean of empty slice returns NaN, treat as 0
+        if share is None or (isinstance(share, float) and np.isnan(share)):
+            share = 0.0
+        share_pct = float(max(0.0, min(100.0, share * 100)))
         fig = go.Figure(go.Pie(
             values=[share_pct, 100 - share_pct], hole=0.7,
             marker=dict(colors=[color, "#E5E7EB"], line=dict(color="white", width=1)),
@@ -494,9 +512,11 @@ def donut_pair(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: str
         ))
         fig.add_annotation(text=f"<b>{share_pct:.0f}%</b>", x=0.5, y=0.5,
                            showarrow=False, font=dict(size=18, color=INK))
-        fig.update_layout(**base_layout(height=110, l=4, r=4, t=4, b=4),
-                          showlegend=False)
+        # base_layout already sets showlegend=False — don't pass it again here
+        # or you get TypeError: multiple values for keyword 'showlegend'.
+        fig.update_layout(**base_layout(height=110, l=4, r=4, t=4, b=4))
         return fig
+
     return (_donut(helmet_share, "Helmet not worn"),
             _donut(traffic_share, "High-traffic exposure"),
             f"{helmet_share * 100:.0f}% of riders in these crashes weren't wearing a helmet.",
@@ -518,7 +538,13 @@ def inject_css() -> None:
     }}
     #MainMenu, footer, header[data-testid="stHeader"] {{ display: none !important; }}
     div[data-testid="stToolbar"] {{ display: none !important; }}
-    /* Card */
+    /* Hide Streamlit Cloud "Manage app" + page-name badge */
+    .stDeployButton, [class*="viewerBadge"], [class*="ViewerBadge"] {{ display: none !important; }}
+    iframe[title="streamlitApp"] {{ display: none !important; }}
+    div[data-testid="stStatusWidget"] {{ display: none !important; }}
+    [data-testid="stAppDeployButton"] {{ display: none !important; }}
+    /* Tighten the spacing between bands so the dashboard reads as one frame */
+    div[data-testid="stVerticalBlock"] {{ gap: 0.5rem; }}
     .acs-card {{
       background: {SURFACE}; border: 1px solid {BORDER}; border-radius: 16px;
       padding: 20px; box-sizing: border-box;
@@ -527,31 +553,26 @@ def inject_css() -> None:
     .acs-card h2, .acs-card h3, .acs-card .label {{
       margin: 0; padding: 0; color: {INK};
     }}
-    /* App bar */
     .acs-appbar {{
       display: flex; justify-content: space-between; align-items: center;
       padding: 4px 0 12px 0; border-bottom: 1px solid {BORDER}; margin-bottom: 14px;
     }}
     .acs-appbar .brand {{ font-weight: 700; color: {INK}; font-size: 18px; letter-spacing: -0.01em; }}
     .acs-appbar .meta {{ font-size: 11px; color: {MUTED}; text-transform: uppercase; letter-spacing: 0.06em; }}
-    /* Filter rail labels */
     .acs-flabel {{
       font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
       color: {MUTED}; margin: 0 0 4px 0; font-weight: 600;
     }}
-    /* Pill */
     .acs-pill {{
       display: inline-block; padding: 4px 10px; border-radius: 6px;
       color: white; font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
       text-transform: uppercase; margin-bottom: 12px;
     }}
-    /* Hero text */
     .acs-hero {{
       font-size: 30px; line-height: 1.2; font-weight: 700; color: {INK};
       letter-spacing: -0.01em; margin: 0 0 8px 0;
     }}
     .acs-sub {{ font-size: 13px; line-height: 1.55; color: {BODY}; margin: 0 0 14px 0; }}
-    /* KPI strip */
     .acs-kpi-row {{ display: flex; gap: 16px; padding-top: 12px; border-top: 1px solid {BORDER}; }}
     .acs-kpi {{ flex: 1; }}
     .acs-kpi .label {{
@@ -559,7 +580,6 @@ def inject_css() -> None:
       letter-spacing: 0.08em; font-weight: 600; margin-bottom: 4px;
     }}
     .acs-kpi .num {{ font-size: 24px; color: {INK}; font-weight: 700; line-height: 1; }}
-    /* Section title */
     .acs-section {{
       font-size: 14px; color: {INK}; font-weight: 700; margin: 0 0 8px 0;
       letter-spacing: -0.005em;
@@ -568,20 +588,18 @@ def inject_css() -> None:
       font-size: 10px; color: {MUTED}; text-transform: uppercase;
       letter-spacing: 0.08em; font-weight: 600; margin: 0 0 4px 0;
     }}
-    /* Checklist */
     .acs-check {{ display: flex; flex-direction: column; gap: 10px; }}
     .acs-check .item {{
       display: flex; align-items: flex-start; gap: 10px; font-size: 13px;
       line-height: 1.45; color: {BODY};
     }}
     .acs-check .icon {{ flex: 0 0 auto; font-size: 14px; line-height: 1.4; }}
-    /* Tier label */
     .acs-tier {{
       text-align: center; font-size: 12px; color: {INK}; font-weight: 600;
       letter-spacing: 0.04em; text-transform: uppercase; margin-top: 2px;
     }}
-    .acs-tier .delta {{ display: block; font-size: 11px; font-weight: 500; color: {MUTED}; text-transform: none; letter-spacing: 0; margin-top: 2px; }}
-    /* Footer */
+    .acs-tier .delta {{ display: block; font-size: 11px; font-weight: 500;
+      color: {MUTED}; text-transform: none; letter-spacing: 0; margin-top: 2px; }}
     .acs-footer {{
       font-size: 11px; color: {MUTED}; padding-top: 10px;
       border-top: 1px solid {BORDER}; margin-top: 12px; letter-spacing: 0.02em;
@@ -592,7 +610,6 @@ def inject_css() -> None:
       display: inline-block; margin-bottom: 8px;
     }}
     .acs-caption {{ font-size: 11px; color: {MUTED}; margin-top: 4px; }}
-    /* Streamlit selectbox compaction */
     div[data-baseweb="select"] > div {{
       min-height: 36px !important; font-size: 13px !important;
     }}
@@ -615,9 +632,8 @@ def render_appbar(n_total: int) -> None:
 def render_filter_rail(df: pd.DataFrame) -> dict:
     cols = st.columns([1, 1, 1, 1, 1, 1, 1.4])
     bands = ["Any", "Morning 5–10", "Midday 10–15", "Evening 15–19", "Night 19–5"]
-    days_unique = ["Any"] + [d for d in
-        ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-        if d in df["Day of Week"].unique()]
+    days_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    days_unique = ["Any"] + [d for d in days_order if d in df["Day of Week"].unique()]
     rd_opts = ["Any"] + sorted(df["Roadway Part"].dropna().unique().tolist())
     sf_opts = ["Any"] + sorted(df["Surface Condition"].dropna().unique().tolist())
     isect_opts = ["Any", "Intersection", "Non Intersection"]
@@ -632,7 +648,7 @@ def render_filter_rail(df: pd.DataFrame) -> dict:
     options = [bands, days_unique, rd_opts, sf_opts, isect_opts, tc_opts]
     keys = ["time_band", "day", "roadway", "surface", "intersection", "traffic_ctrl"]
     out: dict = {}
-    for i, (col, lab, opts, k) in enumerate(zip(cols[:6], labels, options, keys)):
+    for col, lab, opts, k in zip(cols[:6], labels, options, keys):
         with col:
             st.markdown(f'<div class="acs-flabel">{lab}</div>', unsafe_allow_html=True)
             out[k] = st.selectbox(lab, opts, label_visibility="collapsed", key=f"flt_{k}")
@@ -659,9 +675,12 @@ def render_decision_band(slice_df: pd.DataFrame, all_df: pd.DataFrame) -> None:
           <div class="acs-hero">{v.headline}</div>
           <div class="acs-sub">{v.sub}</div>
           <div class="acs-kpi-row">
-            <div class="acs-kpi"><div class="label">Your conditions</div><div class="num" style="color:{pill_color};">{your_disp}</div></div>
-            <div class="acs-kpi"><div class="label">Austin baseline</div><div class="num">{base_disp}</div></div>
-            <div class="acs-kpi"><div class="label">Matching crashes</div><div class="num">{n_disp}</div></div>
+            <div class="acs-kpi"><div class="label">Your conditions</div>
+              <div class="num" style="color:{pill_color};">{your_disp}</div></div>
+            <div class="acs-kpi"><div class="label">Austin baseline</div>
+              <div class="num">{base_disp}</div></div>
+            <div class="acs-kpi"><div class="label">Matching crashes</div>
+              <div class="num">{n_disp}</div></div>
           </div>
         </div>
         """, unsafe_allow_html=True)
@@ -740,7 +759,7 @@ def render_pattern_band(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: str
 def render_drivers_strip(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: str) -> None:
     cols = st.columns(4)
     rd_fig, rd_cap = roadway_breakdown(slice_df, color)
-    don_helm, don_traf, helm_cap, traf_cap = donut_pair(slice_df, all_df, color)
+    don_helm, don_traf, _, _ = donut_pair(slice_df, all_df, color)
 
     with cols[0]:
         st.markdown('<div class="acs-card tight">', unsafe_allow_html=True)
