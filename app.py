@@ -451,19 +451,25 @@ st.markdown(
     min-height: 0 !important;
     min-width: 0 !important;
   }}
-  /* Kill ALL margin/gap between consecutive chart rows so the upper
-     and lower row sit flush against each other. */
+  /* Chart-row horizontal blocks: zero margin/padding, small inner gap. */
   div[data-testid="stHorizontalBlock"]:has(div[data-testid="stPlotlyChart"]) {{
     margin: 0 !important;
     padding: 0 !important;
     gap: 4px !important;
   }}
-  /* The stVerticalBlock wrapping the two chart rows: reduce its gap to 0
-     between consecutive chart-row blocks. */
-  div[data-testid="stVerticalBlock"]:has(> div[data-testid="stHorizontalBlock"]
-    > div[data-testid="column"] > div[data-testid="stVerticalBlock"]
-    > div[data-testid="stPlotlyChart"]) {{
-    gap: 4px !important;
+  /* Adjacent-sibling rule: the SECOND chart row (immediately following the
+     first chart row) gets a negative top margin that cancels the parent
+     stVerticalBlock's gap, so the two rows sit flush against each other. */
+  div[data-testid="stHorizontalBlock"]:has(div[data-testid="stPlotlyChart"])
+    + div[data-testid="stHorizontalBlock"]:has(div[data-testid="stPlotlyChart"]) {{
+    margin-top: -0.45rem !important;
+  }}
+  /* Catch the case where Streamlit wraps each row in an extra div */
+  div:has(> div[data-testid="stHorizontalBlock"]
+       > div[data-testid="column"] div[data-testid="stPlotlyChart"])
+    + div:has(> div[data-testid="stHorizontalBlock"]
+       > div[data-testid="column"] div[data-testid="stPlotlyChart"]) {{
+    margin-top: -0.45rem !important;
   }}
 
   /* ===== MOBILE: stack 2x2 grid into 1-column. Allow page scroll. ===== */
