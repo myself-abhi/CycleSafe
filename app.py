@@ -777,10 +777,15 @@ def inject_css() -> None:
     .acs-check .icon {{
       flex: 0 0 auto; font-size: clamp(12px, 1vw, 15px); line-height: 1.4;
     }}
+    /* The gauge value + tier label are pulled UP via negative margin so they
+       sit inside the empty space at the bottom of the semicircular gauge
+       arc, visually centered. Clamp scales with viewport so the overlay
+       works at every screen size without hardcoded pixel offsets. */
     .acs-gauge-value {{
       text-align: center; font-size: clamp(20px, 1.85vw, 32px);
-      font-weight: 700; line-height: 1; margin: 2px 0 4px 0;
-      letter-spacing: -0.01em;
+      font-weight: 700; line-height: 1; letter-spacing: -0.01em;
+      margin: clamp(-70px, -5vh, -36px) 0 2px 0 !important;
+      position: relative; z-index: 2;
     }}
     .acs-gauge-value .suffix {{
       font-size: clamp(10px, 0.85vw, 14px); color: {MUTED}; font-weight: 500;
@@ -789,6 +794,7 @@ def inject_css() -> None:
       text-align: center; font-size: clamp(10px, 0.85vw, 13px);
       color: {INK}; font-weight: 600; letter-spacing: 0.04em;
       text-transform: uppercase; margin-top: 2px;
+      position: relative; z-index: 2;
     }}
     .acs-tier .delta {{
       display: block; font-size: clamp(9px, 0.78vw, 12px); font-weight: 500;
