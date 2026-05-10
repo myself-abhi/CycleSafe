@@ -1,21 +1,17 @@
-[theme]
-# Modern Minimal palette — mirrors the HTML preview
-primaryColor = "#0F766E"
-backgroundColor = "#FAFAF9"
-secondaryBackgroundColor = "#FFFFFF"
-textColor = "#111827"
-font = "sans serif"
+# Streamlit theme — matches the in-app three-color system.
+# Lets the page render in our colors before any custom CSS loads,
+# so there's no flash of default Streamlit purple on first paint.
 
-[server]
-headless = true
-runOnSave = false
-fileWatcherType = "none"   # less file-system polling = faster cold start
+[theme]
+base = "light"
+primaryColor = "#2ECC71"
+backgroundColor = "#FAFAFA"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#1E1E1E"
+font = "sans serif"
 
 [browser]
 gatherUsageStats = false
 
 [client]
-showSidebarNavigation = false
-
-[logger]
-level = "warning"
+toolbarMode = "minimal"
