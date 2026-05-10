@@ -953,13 +953,36 @@ with tab_plan:
             },
             edit_options={"edit": True, "remove": True},
         ).add_to(m)
-        # Re-render the user's drawn route after Streamlit reruns
+        # Re-render the user's drawn route after Streamlit reruns. Polygons get
+        # a translucent fill so they keep the same look as during drawing;
+        # polylines stay as a plain teal line. Either way the saved route is
+        # always visible the moment the user returns to or refreshes Plan.
         _persist_coords = _route_coords(st.session_state.drawn_route)
+        _persist_type = ((st.session_state.drawn_route or {})
+                         .get("geometry", {}).get("type"))
         if _persist_coords:
-            folium.PolyLine(
-                [[c[1], c[0]] for c in _persist_coords],
-                color=PRIMARY, weight=5, opacity=0.95,
-            ).add_to(m)
+            latlngs = [[c[1], c[0]] for c in _persist_coords]
+            if _persist_type == "Polygon":
+                folium.Polygon(
+                    latlngs,
+                    color=PRIMARY, weight=5, opacity=0.95,
+                    fill=True, fill_color=PRIMARY, fill_opacity=0.10,
+                ).add_to(m)
+            else:
+                folium.PolyLine(
+                    latlngs, color=PRIMARY, weight=5, opacity=0.95,
+                ).add_to(m)
+            # Re-center the map on the route bounds so the user always sees
+            # what they drew, even after a Streamlit rerun.
+            lats = [c[1] for c in _persist_coords]
+            lngs = [c[0] for c in _persist_coords]
+            if len(_persist_coords) >= 2:
+                lat_pad = max((max(lats) - min(lats)) * 0.20, 0.0015)
+                lng_pad = max((max(lngs) - min(lngs)) * 0.20, 0.0015)
+                m.fit_bounds([
+                    [min(lats) - lat_pad, min(lngs) - lng_pad],
+                    [max(lats) + lat_pad, max(lngs) + lng_pad],
+                ])
         out = st_folium(m, height=720, width=None,
                         returned_objects=["last_active_drawing"], key="plan_map")
         if out and out.get("last_active_drawing"):
@@ -1015,10 +1038,26 @@ def _render_ride_card(title: str, geojson: dict | None, meters: float, risk: dic
             map_id = ("m_" + "".join(ch for ch in title if ch.isalnum())
                       + str(abs(hash(ll_json)) % 100000))
             map_height = 320
+            # Compute padded bounds + a max-zoom cap in Python so the JS doesn't
+            # get to "decide" — we tell it exactly what view to set.
+            lats = [p[0] for p in ll]; lngs = [p[1] for p in ll]
+            sw_lat, ne_lat = min(lats), max(lats)
+            sw_lng, ne_lng = min(lngs), max(lngs)
+            # Pad the box by a generous margin so the polyline doesn't skim the edge.
+            lat_span = max(ne_lat - sw_lat, 1e-5)
+            lng_span = max(ne_lng - sw_lng, 1e-5)
+            lat_pad = max(lat_span * 0.20, 0.0015)
+            lng_pad = max(lng_span * 0.20, 0.0015)
+            bounds = [
+                [sw_lat - lat_pad, sw_lng - lng_pad],
+                [ne_lat + lat_pad, ne_lng + lng_pad],
+            ]
+            bounds_json = json.dumps(bounds)
             html = f"""
             <link rel="stylesheet"
                   href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
             <style>
+              html, body {{ margin: 0; padding: 0; }}
               #{map_id} {{ height: {map_height}px; width: 100%;
                          border-radius: 0 0 8px 8px; }}
             </style>
@@ -1027,30 +1066,40 @@ def _render_ride_card(title: str, geojson: dict | None, meters: float, risk: dic
             <script>
               (function() {{
                 var coords = {ll_json};
+                var bounds = {bounds_json};
                 var map = L.map("{map_id}", {{
-                  scrollWheelZoom: false, zoomControl: true
+                  scrollWheelZoom: false, zoomControl: true,
+                  maxZoom: 17
                 }});
                 L.tileLayer(
                   "https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png",
                   {{ attribution: "&copy; OpenStreetMap contributors",
                      maxZoom: 19 }}
                 ).addTo(map);
-                var line = L.polyline(coords, {{
+                L.polyline(coords, {{
                   color: "{PRIMARY}", weight: 5, opacity: 0.95
                 }}).addTo(map);
                 L.circleMarker({json.dumps(start)}, {{
-                  radius: 6, color: "white", weight: 2,
+                  radius: 7, color: "white", weight: 2,
                   fillColor: "{SUCCESS}", fillOpacity: 1.0
                 }}).bindTooltip("Start").addTo(map);
                 L.circleMarker({json.dumps(end)}, {{
-                  radius: 6, color: "white", weight: 2,
+                  radius: 7, color: "white", weight: 2,
                   fillColor: "{DANGER}", fillOpacity: 1.0
                 }}).bindTooltip("End").addTo(map);
-                // Defer fitBounds slightly so the iframe has its real size
-                setTimeout(function() {{
+
+                // Set the view immediately with our explicit padded bounds, then
+                // fix it again after the iframe sizes itself. maxZoom caps it
+                // so a tiny route doesn't zoom to street-level.
+                function applyView() {{
                   map.invalidateSize();
-                  map.fitBounds(line.getBounds(), {{ padding: [20, 20] }});
-                }}, 50);
+                  map.fitBounds(bounds, {{
+                    padding: [10, 10], maxZoom: 15, animate: false
+                  }});
+                }}
+                applyView();
+                setTimeout(applyView, 100);
+                setTimeout(applyView, 350);
               }})();
             </script>
             """
