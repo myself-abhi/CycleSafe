@@ -65,30 +65,31 @@ def inject_css() -> None:
       [data-testid="stStatusWidget"] {{ display: none !important; }}
       .stDeployButton {{ display: none !important; }}
 
-      /* ============== PAGE SURFACE — fills viewport, no scroll ============== */
+      /* ============== PILLAR 1: VIEWPORT LOCK ============== */
+      /* Force every Streamlit wrapper layer to exactly 100vh with hidden
+         overflow. This kills Streamlit's default 6rem top padding and
+         gives us a true viewport-bound canvas. */
       html, body {{
         height: 100%;
         margin: 0;
         background: {PAGE_BG};
+        overflow: hidden;
       }}
-      .stApp {{
+      .stApp,
+      [data-testid="stAppViewContainer"],
+      [data-testid="stMain"],
+      section[data-testid="stMain"],
+      .main {{
         background: {PAGE_BG} !important;
         color: {CHARCOAL};
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         height: 100vh !important;
+        max-height: 100vh !important;
         overflow: hidden !important;
       }}
-      [data-testid="stAppViewContainer"] {{
-        height: 100vh !important;
-        overflow: hidden !important;
-      }}
-      [data-testid="stMain"], section[data-testid="stMain"] {{
-        height: 100vh !important;
-        overflow: hidden !important;
-      }}
-      .stMainBlockContainer, .block-container {{
+      .stMainBlockContainer, .block-container, .main .block-container {{
         padding: 0.5rem clamp(0.75rem, 2vw, 1.5rem) 0.4rem !important;
-        max-width: 1600px !important;
+        max-width: 100% !important;
         margin: 0 auto !important;
         height: 100vh !important;
         max-height: 100vh !important;
@@ -162,45 +163,95 @@ def inject_css() -> None:
         transition: background 220ms ease, border-color 220ms ease, color 220ms ease;
       }}
 
-      /* ============== EQUAL-HEIGHT 4-PANEL LAYOUT (≥ 901px) ============== */
-      /* Hardcoded vh values — no variables, no calc, no flex chain.
-         Each panel = 41vh, two rows = 82vh, leaving 18vh for brand,
-         filters, and paddings. Boosted specificity with `body .stApp`
-         to override Streamlit's emotion-cache classes. */
+      /* ============== PILLAR 2: CSS GRID 4-PANEL LAYOUT (≥ 901px) ============== */
+      /* Replace Streamlit's flex chain (which collapses to content-height)
+         with explicit CSS Grid. Top-level vertical block becomes a 4-row
+         grid: brand auto, filter auto, then 1fr 1fr for the two panel
+         rows. The 1fr / 1fr guarantees panels split remaining space evenly,
+         no matter what's inside them. */
       @media (min-width: 901px) {{
-        /* Panels: locked to a fixed fraction of viewport height.
-           42vh × 2 rows = 84vh, leaving 16vh for brand + filter + paddings. */
+
+        /* The single vertical block that wraps everything inside .block-container */
+        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"],
+        body .stApp .block-container > [data-testid="stVerticalBlock"] {{
+          display: grid !important;
+          grid-template-rows: auto auto 1fr 1fr !important;
+          height: 100% !important;
+          gap: 0.5rem !important;
+          min-height: 0;
+        }}
+
+        /* Each panel ROW becomes a 2-column grid with stretching cells */
+        body .stApp [data-testid="stHorizontalBlock"]:has([data-testid="stVerticalBlockBorderWrapper"]) {{
+          display: grid !important;
+          grid-template-columns: 1fr 1.15fr !important;
+          gap: 0.5rem !important;
+          height: 100% !important;
+          min-height: 0 !important;
+          align-items: stretch !important;
+        }}
+
+        /* Each column inside a panel row fills its grid cell vertically */
+        body .stApp [data-testid="stHorizontalBlock"]:has([data-testid="stVerticalBlockBorderWrapper"]) > [data-testid="column"],
+        body .stApp [data-testid="stHorizontalBlock"]:has([data-testid="stVerticalBlockBorderWrapper"]) > [data-testid="stColumn"] {{
+          height: 100% !important;
+          min-height: 0 !important;
+          width: auto !important;
+          display: flex !important;
+          flex-direction: column !important;
+        }}
+
+        /* The vertical block inside the column also fills */
+        body .stApp [data-testid="stHorizontalBlock"]:has([data-testid="stVerticalBlockBorderWrapper"])
+          [data-testid="stVerticalBlock"] {{
+          height: 100% !important;
+          min-height: 0 !important;
+          flex: 1 1 auto !important;
+          display: flex !important;
+          flex-direction: column !important;
+        }}
+
+        /* The bordered panel itself fills the column. Content cannot escape. */
         body .stApp [data-testid="stVerticalBlockBorderWrapper"] {{
-          height: 42vh !important;
-          min-height: 42vh !important;
-          max-height: 42vh !important;
+          height: 100% !important;
+          min-height: 0 !important;
+          max-height: 100% !important;
+          flex: 1 1 auto !important;
           overflow: hidden !important;
           display: flex !important;
           flex-direction: column !important;
           box-sizing: border-box !important;
         }}
 
-        /* Force the inner block inside the panel to stretch + flex column */
+        /* Inner stack inside the panel uses flex-column so headers/charts
+           lay out top-to-bottom and pin-to-bottom elements work. */
         body .stApp [data-testid="stVerticalBlockBorderWrapper"]
-          [data-testid="stVerticalBlock"] {{
+          > [data-testid="stVerticalBlock"] {{
           flex: 1 1 auto !important;
           height: 100% !important;
           min-height: 0 !important;
           display: flex !important;
           flex-direction: column !important;
-          gap: 0.4rem !important;
+          gap: 0.35rem !important;
           overflow: hidden !important;
         }}
 
-        /* Force columns to stretch and have proper height context */
-        body .stApp [data-testid="stHorizontalBlock"] {{
-          align-items: stretch !important;
-          margin-bottom: 0 !important;
+        /* PILLAR 3: charts auto-grow to fill their slot inside the panel */
+        body .stApp [data-testid="stAltairChart"] {{
+          flex: 1 1 auto !important;
+          min-height: 0 !important;
+          width: 100% !important;
+          overflow: hidden !important;
         }}
-        body .stApp [data-testid="stHorizontalBlock"] > [data-testid="column"],
-        body .stApp [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {{
-          display: flex !important;
-          flex-direction: column !important;
+        body .stApp .vega-embed,
+        body .stApp .vega-embed > div {{
+          width: 100% !important;
+          height: 100% !important;
+        }}
+        body .stApp .vega-embed canvas,
+        body .stApp .vega-embed svg {{
+          max-width: 100% !important;
+          max-height: 100% !important;
         }}
       }}
 
