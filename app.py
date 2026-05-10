@@ -370,9 +370,10 @@ st.markdown(
     transform: translateY(-1px);
     box-shadow: 0 2px 6px rgba(17,24,39,0.08), 0 4px 12px rgba(17,24,39,0.04);
   }}
-  /* Wrap every Plotly chart in a clean white card. Responsive height —
-     uses CHART_CARD_HEIGHT as floor on laptop, grows with viewport on tall
-     screens, shrinks gracefully on mobile. Plotly autosizes inside it. */
+  /* Wrap every Plotly chart in a clean white card. Card height EXACTLY equals
+     CHART_CARD_HEIGHT (which is CHART_INNER_HEIGHT + 10px buffer for padding
+     and border). Plotly renders at exactly CHART_INNER_HEIGHT — no autosize
+     drift, no whitespace inside, no clipping. Same value on every screen size. */
   div[data-testid="stPlotlyChart"] {{
     background: {SURFACE};
     border: 1px solid {BORDER};
@@ -380,25 +381,9 @@ st.markdown(
     padding: 4px 6px 2px 6px;
     box-shadow: 0 1px 2px rgba(17,24,39,0.04), 0 1px 4px rgba(17,24,39,0.03);
     margin: 0 0 4px 0 !important;
-    height: clamp(220px, 32vh, 360px);
+    height: {CHART_CARD_HEIGHT}px;
     box-sizing: border-box;
     overflow: hidden;
-  }}
-  /* Force every nested Plotly element to fill the card 100%, so the chart
-     scales with the card dimensions instead of rendering at its own default. */
-  div[data-testid="stPlotlyChart"] > div,
-  div[data-testid="stPlotlyChart"] .js-plotly-plot,
-  div[data-testid="stPlotlyChart"] .plot-container,
-  div[data-testid="stPlotlyChart"] .svg-container,
-  div[data-testid="stPlotlyChart"] .main-svg {{
-    height: 100% !important;
-    width: 100% !important;
-  }}
-  /* Mobile: stack the 2x2 grid as 1×4, slightly shorter cards */
-  @media (max-width: 768px) {{
-    div[data-testid="stPlotlyChart"] {{
-      height: clamp(200px, 38vh, 300px);
-    }}
   }}
   /* Reset the inner wrapper so styles don't double-apply */
   div[data-testid="stPlotlyChart"] > div {{
@@ -715,18 +700,19 @@ def _format_chart_title(name: str, subtitle: str) -> str:
 
 def _chart_layout(title: str, height: int = CHART_INNER_HEIGHT,
                   show_legend: bool = False) -> dict:
-    """Uniform chart layout. autosize=True so the chart fills its responsive
-    container exactly — no whitespace inside the card, no overflow.
+    """Uniform chart layout. Fixed height matches the CSS card height EXACTLY,
+    so there's never internal whitespace inside the card. Charts with a legend
+    use the same total height; we just steal more of the bottom margin for it.
     """
     return dict(
         title=dict(text=title, font=dict(size=13, color=FG, family="Inter"),
                    x=0, xanchor="left", y=0.985, yanchor="top",
                    pad=dict(t=0, b=0)),
-        margin=dict(l=64, r=20, t=30, b=38 if not show_legend else 54),
+        margin=dict(l=64, r=20, t=30, b=38 if not show_legend else 56),
         paper_bgcolor=SURFACE, plot_bgcolor=SURFACE,
-        autosize=True, showlegend=show_legend,
+        height=height, autosize=False, showlegend=show_legend,
         legend=dict(orientation="h", x=0.5, xanchor="center",
-                    y=-0.08, yanchor="top",
+                    y=-0.18, yanchor="top",
                     bgcolor="rgba(0,0,0,0)", borderwidth=0,
                     font=dict(size=10, color=FG_MUTED)),
         font=dict(family="Inter", size=10, color=FG_MUTED),
