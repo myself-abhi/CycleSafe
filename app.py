@@ -71,7 +71,7 @@ def layout_budget(viewport_h: int) -> dict[str, int]:
 
     # Per-row ratios — decision row needs more height for verdict + KPI strip,
     # pattern row gets most space for its small-multiples grid + curve.
-    decision_card = max(260, int(available * 0.30))   # 3 cards same height
+    decision_card = max(230, int(available * 0.30))   # 3 cards same height
     pattern_card  = max(310, int(available * 0.40))   # 2 cards same height
     drivers_card  = max(220, int(available * 0.27))   # 4 cards same height
 
