@@ -178,94 +178,98 @@ def inject_css() -> None:
         transition: background 220ms ease, border-color 220ms ease, color 220ms ease;
       }}
 
-      /* ============== PILLAR 2: PANEL ROWS LOCKED TO HALF-VIEWPORT (≥ 901px) ============== */
-      /* Switching from :has() to position-based selectors — :has() needs
-         Safari 15.4+ and that's the most likely reason the previous rules
-         silently failed. Each panel row gets a hard calc() height. */
+      /* ============== PILLAR 2: TOTAL VIEWPORT HIJACK (≥ 901px) ============== */
+      /* Strategy: skip the flex chain entirely. Each panel row gets an
+         EXPLICIT calc() height directly. The math: half of (100vh minus
+         brand + filter + paddings). No reliance on parent flex inheritance,
+         no :has() — just hard-coded geometry the browser can't escape. */
       @media (min-width: 901px) {{
 
-        /* The block-container becomes a flex column so children stack
-           vertically and the last children (panel rows) can flex-grow. */
+        /* Step 1: Block-container is a flex column — children stack vertically. */
         body .stApp .stMainBlockContainer,
-        body .stApp .block-container,
-        body .stApp .main .block-container {{
+        body .stApp .block-container {{
           display: flex !important;
           flex-direction: column !important;
         }}
 
-        /* The top-level vertical block fills the container's height. */
-        body .stApp .block-container > [data-testid="stVerticalBlock"],
-        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] {{
+        /* Step 2: Top-level vertical block fills the container 100%. */
+        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"],
+        body .stApp .block-container > [data-testid="stVerticalBlock"] {{
+          height: 100% !important;
           flex: 1 1 auto !important;
+          min-height: 0 !important;
           display: flex !important;
           flex-direction: column !important;
-          height: 100% !important;
-          min-height: 0 !important;
           gap: 0.4rem !important;
         }}
 
-        /* Brand markdown and filter row stay at their natural compact height. */
-        body .stApp .block-container > [data-testid="stVerticalBlock"] > div:nth-child(1),
-        body .stApp .block-container > [data-testid="stVerticalBlock"] > div:nth-child(2),
-        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > div:nth-child(1),
-        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > div:nth-child(2) {{
+        /* Step 3: Universal child selector. Targets every direct child of
+           the top vertical block, regardless of what wrapper Streamlit uses. */
+
+        /* Brand (1st) and filter (2nd) stay at natural compact size. */
+        body .stApp .block-container > [data-testid="stVerticalBlock"] > *:nth-child(1),
+        body .stApp .block-container > [data-testid="stVerticalBlock"] > *:nth-child(2),
+        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > *:nth-child(1),
+        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > *:nth-child(2) {{
           flex: 0 0 auto !important;
           margin: 0 !important;
+          padding: 0 !important;
         }}
 
-        /* Panel rows (3rd and 4th children of the top vertical block).
-           Each takes half the leftover viewport space. */
-        body .stApp .block-container > [data-testid="stVerticalBlock"] > div:nth-child(3),
-        body .stApp .block-container > [data-testid="stVerticalBlock"] > div:nth-child(4),
-        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > div:nth-child(3),
-        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > div:nth-child(4) {{
-          flex: 1 1 0 !important;
-          min-height: 0 !important;
-          display: flex !important;
-          flex-direction: column !important;
-        }}
-
-        /* The stHorizontalBlock inside each panel-row wrapper fills it,
-           and its columns stretch full height. */
-        body .stApp [data-testid="stHorizontalBlock"] {{
-          align-items: stretch !important;
+        /* Panel rows (3rd & 4th children) — EXPLICIT HEIGHT via calc().
+           140px = brand (~50) + filter (~75) + paddings (~15). */
+        body .stApp .block-container > [data-testid="stVerticalBlock"] > *:nth-child(3),
+        body .stApp .block-container > [data-testid="stVerticalBlock"] > *:nth-child(4),
+        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > *:nth-child(3),
+        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > *:nth-child(4) {{
+          height: calc((100vh - 140px) / 2) !important;
+          min-height: calc((100vh - 140px) / 2) !important;
+          max-height: calc((100vh - 140px) / 2) !important;
+          flex: 0 0 calc((100vh - 140px) / 2) !important;
           margin: 0 !important;
-        }}
-        body .stApp .block-container > [data-testid="stVerticalBlock"] > div:nth-child(n+3) [data-testid="stHorizontalBlock"],
-        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > div:nth-child(n+3) [data-testid="stHorizontalBlock"] {{
-          height: 100% !important;
-          flex: 1 1 auto !important;
-          min-height: 0 !important;
+          padding: 0 !important;
+          display: flex !important;
+          overflow: hidden !important;
         }}
 
-        /* Columns inside panel rows fill their parent's height. */
-        body .stApp .block-container > [data-testid="stVerticalBlock"] > div:nth-child(n+3) [data-testid="column"],
-        body .stApp .block-container > [data-testid="stVerticalBlock"] > div:nth-child(n+3) [data-testid="stColumn"],
-        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > div:nth-child(n+3) [data-testid="column"],
-        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > div:nth-child(n+3) [data-testid="stColumn"] {{
+        /* Step 4: stHorizontalBlock inside the panel-row wrappers fills 100%. */
+        body .stApp .block-container > [data-testid="stVerticalBlock"] > *:nth-child(n+3) [data-testid="stHorizontalBlock"],
+        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > *:nth-child(n+3) [data-testid="stHorizontalBlock"] {{
+          height: 100% !important;
+          width: 100% !important;
+          flex: 1 1 auto !important;
+          min-height: 0 !important;
+          align-items: stretch !important;
+          flex-wrap: nowrap !important;
+        }}
+
+        /* Step 5: Columns inside panel rows take 100% height. */
+        body .stApp .block-container > [data-testid="stVerticalBlock"] > *:nth-child(n+3) [data-testid="column"],
+        body .stApp .block-container > [data-testid="stVerticalBlock"] > *:nth-child(n+3) [data-testid="stColumn"],
+        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > *:nth-child(n+3) [data-testid="column"],
+        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > *:nth-child(n+3) [data-testid="stColumn"] {{
           height: 100% !important;
           min-height: 0 !important;
           display: flex !important;
           flex-direction: column !important;
         }}
 
-        /* Vertical blocks inside columns also fill. */
-        body .stApp .block-container > [data-testid="stVerticalBlock"] > div:nth-child(n+3) [data-testid="column"] [data-testid="stVerticalBlock"],
-        body .stApp .block-container > [data-testid="stVerticalBlock"] > div:nth-child(n+3) [data-testid="stColumn"] [data-testid="stVerticalBlock"],
-        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > div:nth-child(n+3) [data-testid="column"] [data-testid="stVerticalBlock"],
-        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > div:nth-child(n+3) [data-testid="stColumn"] [data-testid="stVerticalBlock"] {{
+        /* Step 6: stVerticalBlocks inside columns fill 100%. */
+        body .stApp .block-container > [data-testid="stVerticalBlock"] > *:nth-child(n+3) [data-testid="column"] [data-testid="stVerticalBlock"],
+        body .stApp .block-container > [data-testid="stVerticalBlock"] > *:nth-child(n+3) [data-testid="stColumn"] [data-testid="stVerticalBlock"],
+        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > *:nth-child(n+3) [data-testid="column"] [data-testid="stVerticalBlock"],
+        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > *:nth-child(n+3) [data-testid="stColumn"] [data-testid="stVerticalBlock"] {{
           height: 100% !important;
-          min-height: 0 !important;
           flex: 1 1 auto !important;
+          min-height: 0 !important;
           display: flex !important;
           flex-direction: column !important;
         }}
 
-        /* The bordered panel surface fills its column, content can't escape. */
+        /* Step 7: The bordered panel itself fills its column. */
         body .stApp [data-testid="stVerticalBlockBorderWrapper"] {{
           height: 100% !important;
           min-height: 0 !important;
-          max-height: 100% !important;
           flex: 1 1 auto !important;
           overflow: hidden !important;
           display: flex !important;
@@ -282,7 +286,7 @@ def inject_css() -> None:
           overflow: hidden !important;
         }}
 
-        /* PILLAR 3: charts grow to fill the slot inside the panel */
+        /* Step 8: Charts grow to fill remaining space inside the panel. */
         body .stApp [data-testid="stAltairChart"] {{
           flex: 1 1 auto !important;
           min-height: 0 !important;
