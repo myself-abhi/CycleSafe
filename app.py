@@ -82,11 +82,11 @@ st.markdown(
     font-weight: 600; color: {PRIMARY}; margin: 0 0 0.3rem 0;
   }}
   .acs-question {{
-    font-size: clamp(1.4rem, 2.2vw, 1.9rem); font-weight: 600; line-height: 1.15;
-    letter-spacing: -0.02em; color: {FG}; margin: 0 0 0.5rem 0;
+    font-size: clamp(1.05rem, 1.5vw, 1.35rem); font-weight: 600; line-height: 1.2;
+    letter-spacing: -0.01em; color: {FG}; margin: 0 0 0.4rem 0;
   }}
   .acs-answer {{
-    font-size: clamp(0.92rem, 1.3vw, 1.05rem); line-height: 1.5; color: {FG_MUTED};
+    font-size: clamp(0.85rem, 1.1vw, 0.95rem); line-height: 1.5; color: {FG_MUTED};
     margin: 0; max-width: 56ch;
   }}
   .acs-answer .accent {{ color: {DANGER}; font-weight: 600; }}
@@ -115,43 +115,43 @@ st.markdown(
   .acs-kpi .sub {{ font-size: 0.78rem; color: {FG_MUTED}; margin-top: 0.3rem; }}
   .acs-kpi.dark .sub {{ color: rgba(255,255,255,0.72); }}
 
-  /* Hero risk card (Plan tab) */
+  /* Hero risk card (Plan tab) — compact for single-page fit */
   .acs-hero {{
-    background: {FG}; color: white; padding: 1.4rem 1.6rem; border-radius: 10px;
+    background: {FG}; color: white; padding: 0.85rem 1.1rem; border-radius: 10px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04);
   }}
   .acs-hero .verdict {{
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 6px 14px; border-radius: 999px; font-weight: 600;
-    font-size: 0.78rem; letter-spacing: 0.08em; margin-bottom: 0.5rem;
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 11px; border-radius: 999px; font-weight: 600;
+    font-size: 0.7rem; letter-spacing: 0.08em; margin-bottom: 0.3rem;
   }}
   .acs-hero .verdict.go {{ background: {SUCCESS}; }}
-  .acs-hero .verdict.caution {{ background: {PRIMARY}; }}  /* 3-color: caution → teal */
+  .acs-hero .verdict.caution {{ background: {PRIMARY}; }}
   .acs-hero .verdict.stop {{ background: {DANGER}; }}
   .acs-hero .verdict.guard {{ background: {PRIMARY}; }}
   .acs-hero .num {{
-    font-size: clamp(2.6rem, 5vw, 4rem); font-weight: 600; line-height: 1;
-    letter-spacing: -0.025em; margin: 0.2rem 0 0.4rem 0;
+    font-size: clamp(1.8rem, 3.2vw, 2.4rem); font-weight: 600; line-height: 1;
+    letter-spacing: -0.025em; margin: 0.1rem 0 0.25rem 0;
   }}
   .acs-hero .num.calm {{ color: {SUCCESS}; }}
   .acs-hero .num.bad  {{ color: {DANGER}; }}
-  .acs-hero .num.warn {{ color: white; }}  /* caution number stays white on dark hero */
+  .acs-hero .num.warn {{ color: white; }}
   .acs-hero .band {{
-    font-size: 0.78rem; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.10em; color: rgba(255,255,255,0.85); margin-bottom: 0.5rem;
+    font-size: 0.68rem; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.10em; color: rgba(255,255,255,0.85); margin-bottom: 0.3rem;
   }}
-  .acs-hero .sub {{ font-size: 0.92rem; color: rgba(255,255,255,0.78); line-height: 1.5; }}
+  .acs-hero .sub {{ font-size: 0.78rem; color: rgba(255,255,255,0.78); line-height: 1.45; }}
 
-  /* Recommendation alert */
+  /* Recommendation alert — compact */
   .acs-rec {{
-    background: {SURFACE}; border: 1px solid {BORDER}; border-left: 4px solid {PRIMARY};
-    border-radius: 6px; padding: 0.9rem 1.1rem; margin-top: 0.8rem;
+    background: {SURFACE}; border: 1px solid {BORDER}; border-left: 3px solid {PRIMARY};
+    border-radius: 6px; padding: 0.6rem 0.85rem; margin-top: 0.55rem;
   }}
   .acs-rec h4 {{
-    color: {PRIMARY}; font-size: 0.78rem; font-weight: 600;
-    text-transform: uppercase; letter-spacing: 0.08em; margin: 0 0 0.4rem 0;
+    color: {PRIMARY}; font-size: 0.7rem; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.08em; margin: 0 0 0.25rem 0;
   }}
-  .acs-rec p {{ font-size: 0.92rem; line-height: 1.55; color: {FG}; margin: 0; }}
+  .acs-rec p {{ font-size: 0.82rem; line-height: 1.45; color: {FG}; margin: 0; }}
   .acs-rec.calm    {{ border-left-color: {SUCCESS}; background: #F0FDF4; }}
   .acs-rec.calm h4 {{ color: {SUCCESS}; }}
   /* "caution" uses teal — same brand color, lighter context */
@@ -234,6 +234,8 @@ st.markdown(
   /* Hide Leaflet.Draw's edit + remove toolbar (clear-route lives in sidebar) */
   .leaflet-draw-edit-edit, .leaflet-draw-edit-remove {{ display: none !important; }}
   .leaflet-draw-section:nth-child(2) {{ display: none !important; }}
+  /* Hide the "Leaflet | © OpenStreetMap contributors" badge on the Plan map */
+  .leaflet-control-attribution {{ display: none !important; }}
 
   /* ===== Modern polish: shadows, hover, chart cards ===== */
   /* KPI cards lift slightly on hover */
@@ -308,11 +310,14 @@ st.markdown(
   }}
   .acs-divider-row {{
     border-top: 1px solid rgba(240,249,255,0.18);
-    margin-top: 0.85rem; padding-top: 0.7rem;
+    margin-top: 0.5rem; padding-top: 0.45rem;
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 12px;
   }}
+  .acs-divider-row .acs-plan-kicker {{ flex: 0 0 auto; }}
   .acs-distance-num {{
-    font-size: 1.35rem; font-weight: 600; color: white;
-    letter-spacing: -0.01em; margin-top: 0.2rem;
+    font-size: 1rem; font-weight: 600; color: white;
+    letter-spacing: -0.01em; margin: 0;
   }}
   .acs-mini-help {{
     font-size: 0.78rem; color: {FG_MUTED}; line-height: 1.5;
@@ -900,10 +905,12 @@ with tab_plan:
                 from baseline ({risk['rate']/agg['baseline']:.2f}×).
               </div>
               <div class="acs-divider-row">
-                <div class="acs-plan-kicker">Route distance</div>
-                <div class="acs-distance-num">{miles:.2f} mi</div>
-                <div style="font-size: 0.78rem; color: rgba(255,255,255,0.7);">
-                  {km:.2f} km · {len(_route_coords(st.session_state.drawn_route))} route points
+                <div class="acs-plan-kicker">Distance</div>
+                <div style="text-align: right;">
+                  <div class="acs-distance-num">{miles:.2f} mi · {km:.2f} km</div>
+                  <div style="font-size: 0.7rem; color: rgba(255,255,255,0.65);">
+                    {len(_route_coords(st.session_state.drawn_route))} route points
+                  </div>
                 </div>
               </div>
             </div>
@@ -1052,18 +1059,16 @@ with tab_plan:
     # Map column — fills the right 2/3 of the viewport
     # =========================================================
     with mapcol:
-        # Brief drawing instructions right above the map
+        # Compact one-line drawing hint above the map
         st.markdown(
             f"""
-            <div style="background: {SURFACE}; border: 1px solid {BORDER};
-                        border-left: 3px solid {PRIMARY}; border-radius: 6px;
-                        padding: 8px 12px; margin-bottom: 8px; font-size: 0.82rem;
-                        color: {FG_MUTED}; line-height: 1.45;">
-              <b style="color:{FG};">How to draw:</b> click the
-              <b style="color:{PRIMARY};">polyline</b> icon (top-left of map) for an
-              open path — <i>double-click last point to finish</i>. Or click the
-              <b style="color:{PRIMARY};">polygon</b> icon for a closed loop —
-              <i>click your start point to close it</i>.
+            <div style="font-size: 0.78rem; color: {FG_MUTED};
+                        margin-bottom: 4px; line-height: 1.4;">
+              <b style="color:{FG};">Draw:</b> click the
+              <b style="color:{PRIMARY};">polyline</b> icon then click points along
+              your route — <i>double-click last point to finish</i>. For a closed
+              loop, use the <b style="color:{PRIMARY};">polygon</b> icon and click
+              your start point to close.
             </div>
             """,
             unsafe_allow_html=True,
@@ -1124,7 +1129,7 @@ with tab_plan:
                     [min(lats) - lat_pad, min(lngs) - lng_pad],
                     [max(lats) + lat_pad, max(lngs) + lng_pad],
                 ])
-        out = st_folium(m, height=720, width=None,
+        out = st_folium(m, height=600, width=None,
                         returned_objects=["last_active_drawing"], key="plan_map")
         if out and out.get("last_active_drawing"):
             new_route = out["last_active_drawing"]
@@ -1200,7 +1205,9 @@ def _render_ride_card(title: str, geojson: dict | None, meters: float, risk: dic
             <style>
               html, body {{ margin: 0; padding: 0; }}
               #{map_id} {{ height: {map_height}px; width: 100%;
-                         border-radius: 0 0 8px 8px; }}
+                         border-radius: 0 0 0 8px; }}
+              /* Hide the Leaflet / OSM attribution badge */
+              .leaflet-control-attribution {{ display: none !important; }}
             </style>
             <div id="{map_id}"></div>
             <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -1248,30 +1255,40 @@ def _render_ride_card(title: str, geojson: dict | None, meters: float, risk: dic
         else:
             st.info("No route drawn for this ride yet.")
     with sum_col:
+        # Single cohesive dark panel — fills the full map height (320px) so the
+        # right side aligns flush with the map on the left. All info lives
+        # inside, no orphan plain-text rows on the page background.
         st.markdown(
             f"""
-            <div class="acs-hero" style="padding: 1rem 1.2rem;">
-              <span style="font-size: 0.7rem; font-weight: 600; letter-spacing: 0.10em;
-                           text-transform: uppercase; color: rgba(255,255,255,0.85);">
-                Should you ride?
-              </span>
-              <div class="num {num_class}" style="font-size: 2.2rem;">{risk.get('rate',0)*100:.1f}%</div>
-              <div class="band">{band_label.upper()}</div>
-              <div class="sub" style="margin-top: 0.4rem;">
-                Of <b>{risk.get('n', 0):,}</b> matching crashes,
-                <b>{risk.get('serious', 0)}</b> were serious ({risk.get('killed', 0)} fatal).
+            <div class="acs-hero" style="padding: 1.1rem 1.3rem;
+                                          height: 320px; border-radius: 0 0 8px 0;
+                                          margin: 0; box-shadow: none;
+                                          display: flex; flex-direction: column;
+                                          justify-content: space-between; gap: 0.8rem;">
+              <div>
+                <span style="font-size: 0.68rem; font-weight: 600; letter-spacing: 0.10em;
+                             text-transform: uppercase; color: rgba(255,255,255,0.85);">
+                  Should you ride?
+                </span>
+                <div class="num {num_class}" style="font-size: 2.4rem; margin-top: 4px;">
+                  {risk.get('rate',0)*100:.1f}%
+                </div>
+                <div class="band" style="margin-top: 2px;">{band_label.upper()}</div>
+                <div class="sub" style="margin-top: 0.5rem;">
+                  Of <b>{risk.get('n', 0):,}</b> matching crashes,
+                  <b>{risk.get('serious', 0)}</b> were serious ({risk.get('killed', 0)} fatal).
+                </div>
+              </div>
+              <div style="border-top: 1px solid rgba(255,255,255,0.18);
+                          padding-top: 0.7rem; font-size: 0.82rem; line-height: 1.55;
+                          color: rgba(255,255,255,0.9);">
+                <div><b>Distance:</b> {miles:.2f} mi · {meters/1000:.2f} km</div>
+                <div><b>Street:</b> {inputs.get('sb', '—')}</div>
+                <div><b>Location:</b> {inputs.get('loc', '—')}</div>
+                <div><b>Helmet:</b> {inputs.get('helmet', '—')}</div>
               </div>
             </div>
             """,
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            f"<div style='font-size: 0.85rem; line-height: 1.55; margin-top: 8px;'>"
-            f"<b>Distance:</b> {miles:.2f} mi ({meters/1000:.2f} km)<br>"
-            f"<b>Street:</b> {inputs.get('sb', '—')}<br>"
-            f"<b>Location:</b> {inputs.get('loc', '—')}<br>"
-            f"<b>Helmet:</b> {inputs.get('helmet', '—')}"
-            f"</div>",
             unsafe_allow_html=True,
         )
     with st.expander("Full JSON"):
