@@ -457,19 +457,49 @@ st.markdown(
     padding: 0 !important;
     gap: 4px !important;
   }}
-  /* Adjacent-sibling rule: the SECOND chart row (immediately following the
-     first chart row) gets a negative top margin that cancels the parent
-     stVerticalBlock's gap, so the two rows sit flush against each other. */
+  /* Row anchors are 0-height marker divs. The "row-2" anchor specifically
+     gets a large negative margin so it (and the chart row right after it)
+     pull up into where the gap was, killing the dead space between rows. */
+  .acs-chart-row-anchor {{
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    line-height: 0 !important;
+  }}
+  /* The Streamlit element-container wrapping the row-2 anchor — pull it
+     and everything that follows it (the row 2 chart block) UP. */
+  div[data-testid="stElementContainer"]:has(.acs-chart-row-2) {{
+    margin-top: -1.5rem !important;
+    margin-bottom: 0 !important;
+    padding: 0 !important;
+    height: 0 !important;
+    min-height: 0 !important;
+  }}
+  /* Belt and braces — also try without stElementContainer in case the
+     wrapper testid differs across Streamlit versions */
+  div:has(> .acs-chart-row-2) {{
+    margin-top: -1.5rem !important;
+    margin-bottom: 0 !important;
+    padding: 0 !important;
+    height: 0 !important;
+    min-height: 0 !important;
+  }}
+  /* The Streamlit-wrapped element container that holds a chart-row block,
+     when it follows another element container holding chart-rows — pull it
+     up with negative margin to fully cancel the parent's gap. Triple-targeted
+     so it works regardless of which wrapper depth Streamlit uses. */
+  div[data-testid="stElementContainer"]:has(div[data-testid="stPlotlyChart"])
+    + div[data-testid="stElementContainer"]:has(div[data-testid="stPlotlyChart"]) {{
+    margin-top: -0.5rem !important;
+  }}
+  div[data-testid="element-container"]:has(div[data-testid="stPlotlyChart"])
+    + div[data-testid="element-container"]:has(div[data-testid="stPlotlyChart"]) {{
+    margin-top: -0.5rem !important;
+  }}
+  /* And on the inner stHorizontalBlock level — belt and braces */
   div[data-testid="stHorizontalBlock"]:has(div[data-testid="stPlotlyChart"])
     + div[data-testid="stHorizontalBlock"]:has(div[data-testid="stPlotlyChart"]) {{
-    margin-top: -0.45rem !important;
-  }}
-  /* Catch the case where Streamlit wraps each row in an extra div */
-  div:has(> div[data-testid="stHorizontalBlock"]
-       > div[data-testid="column"] div[data-testid="stPlotlyChart"])
-    + div:has(> div[data-testid="stHorizontalBlock"]
-       > div[data-testid="column"] div[data-testid="stPlotlyChart"]) {{
-    margin-top: -0.45rem !important;
+    margin-top: -0.5rem !important;
   }}
 
   /* ===== MOBILE: stack 2x2 grid into 1-column. Allow page scroll. ===== */
@@ -1009,10 +1039,16 @@ with tab_home:
 
     st.markdown("<div style='height: 6px'></div>", unsafe_allow_html=True)
 
-    # Charts grid (2×2)
+    # Charts grid (2×2). Each row gets its own marker; CSS uses :has()
+    # adjacent-sibling on those markers to apply negative margin between
+    # the two chart rows so they sit flush.
+    st.markdown('<div class="acs-chart-row-anchor"></div>',
+                unsafe_allow_html=True)
     c1, c2 = st.columns(2)
     with c1: st.plotly_chart(chart_time_of_day(), use_container_width=True, config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False, "responsive": True})
     with c2: st.plotly_chart(chart_speed(),       use_container_width=True, config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False, "responsive": True})
+    st.markdown('<div class="acs-chart-row-anchor acs-chart-row-2"></div>',
+                unsafe_allow_html=True)
     c3, c4 = st.columns(2)
     with c3: st.plotly_chart(chart_year(),        use_container_width=True, config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False, "responsive": True})
     with c4: st.plotly_chart(chart_severity(),    use_container_width=True, config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False, "responsive": True})
