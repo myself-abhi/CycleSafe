@@ -67,9 +67,11 @@ WARNING = PRIMARY            # alias kept so legacy refs don't break
 # Python and CSS both read from these constants. Change a value here and the
 # corresponding region resizes across the entire app — no drift, no gaps.
 #
-# Home tab — chart cards (4× in 2x2 grid)
-CHART_INNER_HEIGHT = 270    # Plotly figure pixel height
-CHART_CARD_HEIGHT = 280     # outer card pixel height (10px buffer)
+# Home tab — chart cards (4× in 2x2 grid). Tuned so the entire Home tab
+# (header + tabs + hero + 2 chart rows + insights + CTA) fits inside an
+# 880px usable viewport without any browser scroll.
+CHART_INNER_HEIGHT = 220    # Plotly figure pixel height
+CHART_CARD_HEIGHT = 230     # outer card pixel height (10px buffer)
 #
 # Plan tab — map iframe (responsive)
 PLAN_MAP_MIN_PX = 640       # floor on small laptops
@@ -233,10 +235,10 @@ st.markdown(
   body > div:not([data-testid]):not([data-stale]):not([class]):not([id]):empty {{ display: none !important; }}
   /* Tight outer padding so the layout breathes like the HTML preview */
   .block-container {{
-    padding-top: 0.5rem !important;
+    padding-top: 0.4rem !important;
     padding-left: 1.1rem !important;
     padding-right: 1.1rem !important;
-    padding-bottom: 0.5rem !important;
+    padding-bottom: 0.3rem !important;
     max-width: 1600px;
   }}
   /* Tighten Streamlit's default vertical block gap so cards sit closer */
