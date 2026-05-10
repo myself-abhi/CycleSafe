@@ -1,918 +1,817 @@
 """
-Austin CycleSafe — a go/no-go decision tool for Austin cyclists.
-
-ALY6040 · Module 5 · Building Products
-Single-file Streamlit app. Run with:  streamlit run app.py
-
-The user is an Austin cyclist about to leave the house. The decision the
-app supports is binary: ride now, or wait / change route / skip. The
-indicator is the rate at which historical crashes turned serious (Killed
-or Incapacitating Injury — "KSI"), compared against the citywide baseline.
-
-Three colors only:  Charcoal #1E1E1E  ·  Safety Teal #2ECC71  ·  Pure White
-The page stays on the white/teal palette always; only the verdict panel
-itself flips charcoal-on-white when conditions exceed the baseline.
-Four panels: 2x2 on laptop, single column on mobile.
+Austin CycleSafe — Go/No-Go decision tool for urban cyclists.
+Built on Austin Open Data 2010-2017 cyclist crash records.
 """
+from __future__ import annotations
 
+from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
-import altair as alt
 import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
-# ---------------------------------------------------------------------
-# PAGE CONFIG  — must be the first Streamlit call
-# ---------------------------------------------------------------------
+# ---------- CONFIG ----------
+DATA_PATH = "bike_crash.csv"
+MIN_SAMPLE = 30  # sample-size floor for trustworthy verdict
+
+# Design tokens
+INK, BODY, MUTED = "#0A0A0A", "#374151", "#6B7280"
+SURFACE, CARD, BORDER = "#FFFFFF", "#F9FAFB", "#E5E7EB"
+GREEN, AMBER, RED = "#16A34A", "#F59E0B", "#DC2626"
+GREEN_SOFT, AMBER_SOFT, RED_SOFT = "#DCFCE7", "#FEF3C7", "#FEE2E2"
+FONT = '-apple-system, "Segoe UI", Inter, Roboto, sans-serif'
+
 st.set_page_config(
-    page_title="Austin CycleSafe",
-    page_icon="🚲",
-    layout="wide",
-    initial_sidebar_state="collapsed",
+    page_title="Austin CycleSafe", page_icon="🚲",
+    layout="wide", initial_sidebar_state="collapsed",
 )
 
-# ---------------------------------------------------------------------
-# CONSTANTS
-# ---------------------------------------------------------------------
-CHARCOAL = "#1E1E1E"
-TEAL = "#2ECC71"
-WHITE = "#FFFFFF"
-RED = "#E63946"   # used only for the DANGER verdict panel
-PAGE_BG = "#FAFAFA"
-LINE = "#ECECEC"
-MUTED = "#6B6B6B"
-
-KSI_SEVERITIES = {"Killed", "Incapacitating Injury"}
-MIN_SAMPLE_SIZE = 30
-DATA_PATH = Path(__file__).parent / "bike_crash.csv"
-
-
-# ---------------------------------------------------------------------
-# CSS — single payload, white/teal palette throughout.
-# Only the verdict panel flips charcoal when DANGER; everything else
-# stays white. The flip is driven by a class on the verdict's inner div,
-# which the panel container picks up via :has().
-# ---------------------------------------------------------------------
-def inject_css() -> None:
-    css = f"""
-    <style>
-      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-
-      /* ============== STREAMLIT CHROME — KILL IT ============== */
-      #MainMenu, footer, header[data-testid="stHeader"] {{ display: none !important; }}
-      [data-testid="stToolbar"], [data-testid="stDecoration"] {{ display: none !important; }}
-      [data-testid="stStatusWidget"] {{ display: none !important; }}
-      .stDeployButton {{ display: none !important; }}
-
-      /* ============== PILLAR 1: FULL-BLEED VIEWPORT LOCK ============== */
-      /* Lock every Streamlit wrapper to 100vh with hidden overflow.
-         Zero all padding/margin on element-containers — that's what was
-         creating the empty gap between filter strip and panels. */
-      html, body {{
-        height: 100%;
-        margin: 0;
-        background: {PAGE_BG};
-        overflow: hidden;
-      }}
-      .stApp,
-      [data-testid="stAppViewContainer"],
-      [data-testid="stMain"],
-      section[data-testid="stMain"],
-      .main {{
-        background: {PAGE_BG} !important;
-        color: {CHARCOAL};
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        height: 100vh !important;
-        max-height: 100vh !important;
-        overflow: hidden !important;
-      }}
-      .stMainBlockContainer, .block-container, .main .block-container {{
-        padding: 0.5rem clamp(0.75rem, 2vw, 1.5rem) 0.4rem !important;
-        max-width: 100% !important;
-        margin: 0 auto !important;
-        height: 100vh !important;
-        max-height: 100vh !important;
-        overflow: hidden !important;
-      }}
-
-      /* THE FIX FOR THE GAP: zero out every wrapper Streamlit injects.
-         These all have default margin / padding that adds vertical space. */
-      .element-container,
-      .row-widget,
-      .stElementContainer,
-      [data-testid="element-container"],
-      [data-testid="stElementContainer"],
-      [data-testid="stMarkdownContainer"] {{
-        margin: 0 !important;
-        padding: 0 !important;
-      }}
-      [data-testid="stMarkdown"] {{
-        margin: 0 !important;
-      }}
-
-      /* ============== BRAND BAR ============== */
-      .brand-row {{
-        display: flex; align-items: center; gap: 0.7rem;
-        padding: 0.1rem 0 0.4rem 0;
-        border-bottom: 1px solid {LINE};
-        margin-bottom: 0.4rem;
-        flex-wrap: wrap;
-      }}
-      .brand-icon {{
-        width: clamp(28px, 3vw, 34px);
-        height: clamp(28px, 3vw, 34px);
-        border-radius: 8px;
-        background: {TEAL};
-        color: {WHITE};
-        display: flex; align-items: center; justify-content: center;
-        flex-shrink: 0;
-      }}
-      .brand-icon svg {{ width: 60%; height: 60%; stroke: currentColor !important; }}
-      .brand-name {{
-        color: {CHARCOAL};
-        font-weight: 800;
-        font-size: clamp(0.95rem, 1.2vw, 1.1rem);
-        letter-spacing: -0.02em;
-      }}
-      .brand-tag {{
-        color: {MUTED};
-        font-size: clamp(0.7rem, 0.85vw, 0.8rem);
-        margin-left: auto;
-        letter-spacing: 0.02em;
-      }}
-      @media (max-width: 920px) {{ .brand-tag {{ display: none; }} }}
-
-      /* ============== FILTER STRIP — wraps gracefully ============== */
-      [data-testid="stHorizontalBlock"] {{
-        flex-wrap: wrap !important;
-        gap: 0.6rem !important;
-        row-gap: 0.6rem !important;
-      }}
-      [data-testid="stHorizontalBlock"] > [data-testid="column"],
-      [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {{
-        min-width: 0;
-        flex: 1 1 180px !important;
-      }}
-      .stSelectbox label {{
-        font-size: 0.68rem !important;
-        color: {MUTED} !important;
-        text-transform: uppercase;
-        letter-spacing: 0.1em;
-        font-weight: 600 !important;
-      }}
-      .stSelectbox > div > div {{
-        background: {WHITE} !important;
-        border: 1px solid {LINE} !important;
-        border-radius: 8px !important;
-        color: {CHARCOAL} !important;
-      }}
-      .stSelectbox div[data-baseweb="select"] > div {{ color: {CHARCOAL} !important; }}
-
-      /* ============== PANELS — all white by default ============== */
-      [data-testid="stVerticalBlockBorderWrapper"] {{
-        background: {WHITE} !important;
-        border: 1px solid {LINE} !important;
-        border-radius: 14px !important;
-        padding: clamp(0.75rem, 1.2vw, 1.1rem) clamp(0.9rem, 1.5vw, 1.3rem) !important;
-        transition: background 220ms ease, border-color 220ms ease, color 220ms ease;
-      }}
-
-      /* ============== PILLAR 2: ABSOLUTE POSITIONING — NO MORE GUESSING ============== */
-      /* Flex chains have failed because Streamlit's wrapper structure on
-         Streamlit Cloud doesn't match what my selectors target. Switching
-         to position: absolute. Panel rows lock to fixed viewport regions
-         regardless of any sibling/wrapper margins. The empty space cannot
-         exist because each panel row is anchored to specific top/bottom
-         coordinates.
-
-         Layout map (vertical):
-           0 ─────────── 130px    brand + filter (natural flow)
-           130px ────── 50vh     panel row 1 (top half)
-           50vh ─────── 100vh-10  panel row 2 (bottom half)
-      */
-      @media (min-width: 901px) {{
-
-        /* Establish the positioning context */
-        body .stApp .stMainBlockContainer,
-        body .stApp .block-container {{
-          position: relative !important;
-        }}
-        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"],
-        body .stApp .block-container > [data-testid="stVerticalBlock"] {{
-          position: relative !important;
-          height: 100% !important;
-        }}
-
-        /* Panel ROW 1 (3rd direct child) — locked to 130px → 50vh.
-           position: absolute pulls it out of normal flow, so sibling
-           margins/padding can't push it down. */
-        body .stApp .block-container > [data-testid="stVerticalBlock"] > *:nth-child(3),
-        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > *:nth-child(3) {{
-          position: absolute !important;
-          top: 130px !important;
-          bottom: calc(50vh + 4px) !important;
-          left: 0 !important;
-          right: 0 !important;
-          margin: 0 !important;
-          padding: 0 !important;
-          display: flex !important;
-          overflow: hidden !important;
-        }}
-
-        /* Panel ROW 2 (4th direct child) — locked to 50vh → 100vh-10. */
-        body .stApp .block-container > [data-testid="stVerticalBlock"] > *:nth-child(4),
-        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > *:nth-child(4) {{
-          position: absolute !important;
-          top: calc(50vh + 4px) !important;
-          bottom: 10px !important;
-          left: 0 !important;
-          right: 0 !important;
-          margin: 0 !important;
-          padding: 0 !important;
-          display: flex !important;
-          overflow: hidden !important;
-        }}
-
-        /* The stHorizontalBlock inside each panel row fills it 100%. */
-        body .stApp .block-container > [data-testid="stVerticalBlock"] > *:nth-child(n+3) [data-testid="stHorizontalBlock"],
-        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > *:nth-child(n+3) [data-testid="stHorizontalBlock"] {{
-          height: 100% !important;
-          width: 100% !important;
-          flex: 1 1 auto !important;
-          min-height: 0 !important;
-          margin: 0 !important;
-          align-items: stretch !important;
-          flex-wrap: nowrap !important;
-        }}
-
-        /* Columns inside panel rows fill height. */
-        body .stApp .block-container > [data-testid="stVerticalBlock"] > *:nth-child(n+3) [data-testid="column"],
-        body .stApp .block-container > [data-testid="stVerticalBlock"] > *:nth-child(n+3) [data-testid="stColumn"],
-        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > *:nth-child(n+3) [data-testid="column"],
-        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > *:nth-child(n+3) [data-testid="stColumn"] {{
-          height: 100% !important;
-          min-height: 0 !important;
-          display: flex !important;
-          flex-direction: column !important;
-        }}
-
-        /* Inner stVerticalBlock fills its column. */
-        body .stApp .block-container > [data-testid="stVerticalBlock"] > *:nth-child(n+3) [data-testid="column"] [data-testid="stVerticalBlock"],
-        body .stApp .block-container > [data-testid="stVerticalBlock"] > *:nth-child(n+3) [data-testid="stColumn"] [data-testid="stVerticalBlock"],
-        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > *:nth-child(n+3) [data-testid="column"] [data-testid="stVerticalBlock"],
-        body .stApp .stMainBlockContainer > [data-testid="stVerticalBlock"] > *:nth-child(n+3) [data-testid="stColumn"] [data-testid="stVerticalBlock"] {{
-          height: 100% !important;
-          flex: 1 1 auto !important;
-          min-height: 0 !important;
-          display: flex !important;
-          flex-direction: column !important;
-        }}
-
-        /* The bordered panel surface fills its parent column. */
-        body .stApp [data-testid="stVerticalBlockBorderWrapper"] {{
-          height: 100% !important;
-          min-height: 0 !important;
-          flex: 1 1 auto !important;
-          overflow: hidden !important;
-          display: flex !important;
-          flex-direction: column !important;
-          box-sizing: border-box !important;
-        }}
-        body .stApp [data-testid="stVerticalBlockBorderWrapper"] > [data-testid="stVerticalBlock"] {{
-          flex: 1 1 auto !important;
-          height: 100% !important;
-          min-height: 0 !important;
-          display: flex !important;
-          flex-direction: column !important;
-          gap: 0.35rem !important;
-          overflow: hidden !important;
-        }}
-
-        /* Charts fill the panel's vertical space below the section header. */
-        body .stApp [data-testid="stAltairChart"] {{
-          flex: 1 1 auto !important;
-          min-height: 0 !important;
-          width: 100% !important;
-          overflow: hidden !important;
-        }}
-        body .stApp .vega-embed,
-        body .stApp .vega-embed > div {{
-          width: 100% !important;
-          height: 100% !important;
-        }}
-        body .stApp .vega-embed canvas,
-        body .stApp .vega-embed svg {{
-          max-width: 100% !important;
-          max-height: 100% !important;
-        }}
-      }}
-
-      /* ============== MOBILE FALLBACK (≤ 900px) ============== */
-      /* Release the viewport lock so phones can scroll normally */
-      @media (max-width: 900px) {{
-        html, body {{ height: auto; }}
-        .stApp, [data-testid="stAppViewContainer"],
-        [data-testid="stMain"], .stMainBlockContainer, .block-container {{
-          height: auto !important;
-          max-height: none !important;
-          overflow: visible !important;
-        }}
-        [data-testid="stVerticalBlockBorderWrapper"] {{
-          height: auto !important;
-          min-height: 260px;
-          margin-bottom: 0.6rem !important;
-        }}
-      }}
-
-      /* Panel section header */
-      .sec-h {{
-        font-size: clamp(0.66rem, 0.82vw, 0.74rem);
-        text-transform: uppercase;
-        letter-spacing: 0.14em;
-        color: {MUTED};
-        margin: 0 0 0.55rem 0;
-        font-weight: 700;
-        flex-shrink: 0;
-      }}
-
-      /* ============== VERDICT PANEL — accent strip on top ============== */
-      [data-testid="stVerticalBlockBorderWrapper"]:has(.verdict-content) {{
-        position: relative;
-        overflow: hidden;
-      }}
-
-      /* Top accent strip — color depends on mode */
-      [data-testid="stVerticalBlockBorderWrapper"]:has(.verdict-content)::before {{
-        content: '';
-        position: absolute;
-        top: 0; left: 0; right: 0;
-        height: 4px;
-        background: {TEAL};
-      }}
-      [data-testid="stVerticalBlockBorderWrapper"]:has(.mode-danger.verdict-content)::before {{
-        background: {WHITE};
-      }}
-      [data-testid="stVerticalBlockBorderWrapper"]:has(.mode-unknown.verdict-content)::before {{
-        background: {CHARCOAL};
-      }}
-
-      /* DANGER: only the verdict panel turns red — page stays white */
-      [data-testid="stVerticalBlockBorderWrapper"]:has(.mode-danger.verdict-content) {{
-        background: {RED} !important;
-        border-color: {RED} !important;
-        color: {WHITE};
-      }}
-
-      /* ============== VERDICT CONTENT ============== */
-      .verdict-mode {{
-        display: inline-block;
-        font-size: clamp(0.62rem, 0.78vw, 0.7rem);
-        letter-spacing: 0.2em;
-        font-weight: 700;
-        text-transform: uppercase;
-        padding: 0.25rem 0.65rem;
-        border-radius: 999px;
-        margin-bottom: 0.55rem;
-      }}
-      .mode-safe .verdict-mode    {{ background: {TEAL};     color: {WHITE}; }}
-      .mode-danger .verdict-mode  {{ background: {WHITE};    color: {RED}; }}
-      .mode-unknown .verdict-mode {{ background: {CHARCOAL}; color: {WHITE}; }}
-
-      .verdict-headline {{
-        font-size: clamp(1.3rem, 2.3vw, 2rem);
-        line-height: 1.1;
-        margin: 0 0 0.4rem 0;
-        letter-spacing: -0.025em;
-        font-weight: 800;
-        color: {CHARCOAL};
-      }}
-      .mode-danger .verdict-headline {{ color: {WHITE}; }}
-
-      .verdict-sub {{
-        font-size: clamp(0.82rem, 0.95vw, 0.92rem);
-        color: {MUTED};
-        margin: 0 0 0.75rem 0;
-        line-height: 1.45;
-      }}
-      /* On red bg, soften white slightly for the supporting copy */
-      .mode-danger .verdict-sub {{ color: rgba(255,255,255,0.88); }}
-
-      .verdict-numbers {{
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-        gap: 0.7rem;
-        padding-top: 0.6rem;
-        border-top: 1px solid {LINE};
-        margin-top: auto;  /* push to bottom of verdict panel */
-      }}
-      .mode-danger .verdict-numbers {{ border-top-color: rgba(255,255,255,0.25); }}
-      .verdict-numbers .cell {{
-        display: flex; flex-direction: column; gap: 0.15rem;
-        min-width: 0;
-      }}
-      .verdict-numbers .num {{
-        font-size: clamp(1.1rem, 1.7vw, 1.5rem);
-        font-weight: 800;
-        color: {CHARCOAL};
-        letter-spacing: -0.02em;
-        line-height: 1.1;
-      }}
-      .mode-danger .verdict-numbers .num {{ color: {WHITE}; }}
-      .verdict-numbers .lbl {{
-        font-size: clamp(0.62rem, 0.75vw, 0.7rem);
-        color: {MUTED};
-        text-transform: uppercase;
-        letter-spacing: 0.1em;
-      }}
-      .mode-danger .verdict-numbers .lbl {{ color: rgba(255,255,255,0.75); }}
-
-      /* ============== METRIC CARDS (selection panel) ============== */
-      .metric-block {{
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-        gap: 0.5rem;
-        margin-bottom: 0.55rem;
-        flex-shrink: 0;
-      }}
-      .metric-card {{
-        background: {PAGE_BG};
-        border-radius: 10px;
-        padding: clamp(0.4rem, 0.7vw, 0.6rem) clamp(0.55rem, 0.9vw, 0.8rem);
-        border: 1px solid {LINE};
-        min-width: 0;
-      }}
-      .metric-card .num {{
-        display: block;
-        font-size: clamp(1rem, 1.5vw, 1.35rem);
-        font-weight: 800;
-        color: {CHARCOAL};
-        letter-spacing: -0.02em;
-        line-height: 1.1;
-      }}
-      .metric-card .lbl {{
-        display: block;
-        font-size: clamp(0.58rem, 0.7vw, 0.66rem);
-        color: {MUTED};
-        text-transform: uppercase;
-        letter-spacing: 0.1em;
-        margin-top: 0.15rem;
-      }}
-
-      /* ============== FACTOR LIST (why panel) ============== */
-      .factor {{
-        font-size: clamp(0.82rem, 0.95vw, 0.9rem);
-        color: {CHARCOAL};
-        padding: 0.4rem 0;
-        border-bottom: 1px solid {LINE};
-        line-height: 1.4;
-      }}
-      .factor:last-of-type {{ border-bottom: none; }}
-      .factor b {{ color: {TEAL}; font-weight: 700; }}
-
-      /* ============== EMPTY STATE ============== */
-      .empty-state {{
-        color: {MUTED};
-        font-size: 0.95rem;
-        line-height: 1.55;
-        padding: 1.2rem 0.5rem;
-        text-align: center;
-      }}
-      .empty-state .muted {{ color: {MUTED}; font-size: 0.82rem; opacity: 0.85; }}
-
-      /* ============== PROVENANCE FOOTER ============== */
-      .prov {{
-        margin-top: auto;          /* anchors to panel bottom */
-        padding-top: 0.45rem;
-        border-top: 1px dashed {LINE};
-        font-size: clamp(0.6rem, 0.72vw, 0.68rem);
-        color: {MUTED};
-        letter-spacing: 0.04em;
-        flex-shrink: 0;
-      }}
-
-      /* ============== ALTAIR / VEGA CHARTS ============== */
-      .vega-embed {{ background: transparent !important; width: 100% !important; }}
-      .vega-embed canvas, .vega-embed svg {{ max-width: 100% !important; height: auto !important; }}
-      .stAltairChart, [data-testid="stAltairChart"] {{
-        background: transparent !important;
-        width: 100% !important;
-      }}
-
-      /* ============== TABLET BREAKPOINT (≤ 900px) ============== */
-      @media (max-width: 900px) {{
-        [data-testid="stHorizontalBlock"] {{ flex-direction: column !important; }}
-        [data-testid="stHorizontalBlock"] > [data-testid="column"],
-        [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {{
-          width: 100% !important;
-          flex: 1 1 100% !important;
-        }}
-        [data-testid="stVerticalBlockBorderWrapper"] {{ margin-bottom: 0.7rem !important; }}
-      }}
-
-      /* ============== MOBILE BREAKPOINT (≤ 600px) ============== */
-      @media (max-width: 600px) {{
-        .verdict-numbers {{ grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }}
-        .metric-block    {{ grid-template-columns: repeat(3, 1fr); gap: 0.4rem; }}
-      }}
-
-      /* ============== TINY VIEWPORT (≤ 380px) ============== */
-      @media (max-width: 380px) {{
-        .verdict-numbers, .metric-block {{ grid-template-columns: 1fr 1fr; }}
-      }}
-
-      /* ============== REDUCED MOTION ============== */
-      @media (prefers-reduced-motion: reduce) {{
-        * {{ transition: none !important; }}
-      }}
-    </style>
-    """
-    st.markdown(css, unsafe_allow_html=True)
-
-
-# ---------------------------------------------------------------------
-# DATA
-# ---------------------------------------------------------------------
+# ---------- DATA ----------
 @st.cache_data(show_spinner=False)
-def load_data() -> pd.DataFrame:
-    df = pd.read_csv(DATA_PATH)
-    df["is_ksi"] = df["Crash Severity"].isin(KSI_SEVERITIES).astype(int)
-    df["hour"] = (df["Crash Time"] // 100).clip(0, 23)
-    bins = [-1, 5, 10, 15, 20, 24]
-    labels = ["Late night (0-5)", "Morning (5-10)", "Midday (10-15)",
-              "Evening (15-20)", "Night (20-24)"]
-    df["time_of_day"] = pd.cut(df["hour"], bins=bins, labels=labels)
-    df["weather_proxy"] = df["Surface Condition"].fillna("Unknown")
-    df["speed_limit_clean"] = df["Speed Limit"].where(df["Speed Limit"] > 0)
-    return df
+def synthesize_data(n: int = 2463, seed: int = 42) -> pd.DataFrame:
+    """Plausible Austin crash rows when CSV is missing."""
+    rng = np.random.default_rng(seed)
+    # hour distribution biased toward rush hours
+    hour_choices = (
+        [7, 8, 9] * int(n * 0.06) + [17, 18, 19] * int(n * 0.07) +
+        list(range(10, 16)) * int(n * 0.05) + [20, 21, 22] * int(n * 0.03) +
+        [0, 1, 2, 3, 4, 5, 6, 23] * int(n * 0.02)
+    )
+    hours = rng.choice(hour_choices, size=n)
+    minutes = rng.integers(0, 60, n)
+    crash_time = (hours * 100 + minutes).astype(int)
+
+    severities = ["Killed", "Incapacitating Injury", "Non-Incapacitating Injury",
+                  "Possible Injury", "Not Injured", "Unknown"]
+    sev_p = [0.012, 0.098, 0.32, 0.30, 0.25, 0.02]
+
+    days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    day_p = [0.16, 0.16, 0.16, 0.16, 0.18, 0.10, 0.08]
+
+    traffic = rng.integers(500, 35000, n).astype(object)
+    no_data_idx = rng.choice(n, size=int(n * 0.04), replace=False)
+    traffic[no_data_idx] = "No Data"
+
+    return pd.DataFrame({
+        "$1000 Damage to Any One Person's Property": rng.choice(["Yes", "No"], n, p=[0.45, 0.55]),
+        "Active School Zone Flag": rng.choice(["Yes", "No"], n, p=[0.04, 0.96]),
+        "At Intersection Flag": rng.choice(["TRUE", "FALSE"], n, p=[0.55, 0.45]),
+        "Average Daily Traffic Amount": traffic,
+        "Construction Zone Flag": rng.choice(["Yes", "No"], n, p=[0.06, 0.94]),
+        "Crash Severity": rng.choice(severities, n, p=sev_p),
+        "Crash Time": crash_time,
+        "Crash Total Injury Count": rng.integers(0, 4, n),
+        "Crash Year": rng.integers(2010, 2018, n),
+        "Day of Week": rng.choice(days, n, p=day_p),
+        "Intersection Related": rng.choice(
+            ["Intersection", "Non Intersection", "Driveway Access", "Intersection Related"],
+            n, p=[0.45, 0.32, 0.10, 0.13]),
+        "Roadway Part": rng.choice(
+            ["Main/Proper Lane", "Service/Frontage Road", "Shoulder", "Sidewalk", "Other"],
+            n, p=[0.78, 0.06, 0.05, 0.08, 0.03]),
+        "Speed Limit": rng.choice([0, 25, 30, 35, 40, 45, 50, 55], n,
+                                  p=[0.05, 0.18, 0.30, 0.22, 0.12, 0.08, 0.03, 0.02]),
+        "Surface Condition": rng.choice(
+            ["Dry", "Wet", "Standing Water", "Other"], n, p=[0.85, 0.11, 0.02, 0.02]),
+        "Traffic Control Type": rng.choice(
+            ["Marked Lanes", "Center Stripe/Divider", "Signal Light", "Stop Sign",
+             "None", "Yield Sign"], n, p=[0.40, 0.18, 0.20, 0.10, 0.08, 0.04]),
+        "Person Helmet": rng.choice(
+            ["Not Worn", "Worn, Damaged", "Worn, Not Damaged", "Unknown"],
+            n, p=[0.55, 0.05, 0.30, 0.10]),
+    })
 
 
-def baseline_ksi_rate(df: pd.DataFrame) -> float:
-    return df["is_ksi"].mean()
+@st.cache_data(show_spinner=False)
+def load_data() -> tuple[pd.DataFrame, str]:
+    p = Path(DATA_PATH)
+    source = ""
+    try:
+        if p.exists():
+            df = pd.read_csv(p)
+            source = f"City of Austin Open Data ({p.name})"
+        else:
+            df, source = synthesize_data(), "synthetic fallback (CSV not found)"
+    except Exception:
+        df, source = synthesize_data(), "synthetic fallback (CSV unreadable)"
+
+    # Coercions
+    df["Average Daily Traffic Amount"] = pd.to_numeric(
+        df["Average Daily Traffic Amount"], errors="coerce")
+    crash_t = pd.to_numeric(df["Crash Time"], errors="coerce").fillna(-1).astype(int)
+    df["hour"] = (crash_t // 100).clip(lower=0, upper=23)
+    df["is_ksi"] = df["Crash Severity"].isin(["Killed", "Incapacitating Injury"])
+
+    def norm_helmet(v):
+        if not isinstance(v, str): return "Unknown"
+        if "Worn," in v: return "Worn"
+        if v == "Not Worn": return "Not Worn"
+        return "Unknown"
+    df["helmet"] = df["Person Helmet"].apply(norm_helmet)
+
+    df["Speed Limit"] = pd.to_numeric(df["Speed Limit"], errors="coerce")
+    df.loc[df["Speed Limit"] <= 5, "Speed Limit"] = np.nan
+
+    def time_band(h):
+        if 5 <= h < 10: return "Morning 5–10"
+        if 10 <= h < 15: return "Midday 10–15"
+        if 15 <= h < 19: return "Evening 15–19"
+        return "Night 19–5"
+    df["time_band"] = df["hour"].apply(time_band)
+
+    def isect(row):
+        ir = row.get("Intersection Related", "")
+        if ir in ("Intersection", "Intersection Related"): return "Intersection"
+        if ir == "Non Intersection": return "Non Intersection"
+        return "Other"
+    df["intersection_bucket"] = df.apply(isect, axis=1)
+
+    def speed_bucket(s):
+        if pd.isna(s): return "Unknown"
+        if s <= 25: return "≤25"
+        if s <= 30: return "30"
+        if s <= 35: return "35"
+        if s <= 40: return "40"
+        return "≥45"
+    df["speed_bucket"] = df["Speed Limit"].apply(speed_bucket)
+
+    return df, source
 
 
-def filter_df(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
+# ---------- VERDICT ----------
+@dataclass
+class Verdict:
+    code: str
+    headline: str
+    sub: str
+    color: str
+    n: int
+    ksi_rate: float
+    baseline: float
+    delta_pp: float
+
+
+def decide(slice_df: pd.DataFrame, all_df: pd.DataFrame) -> Verdict:
+    n = len(slice_df)
+    baseline = float(all_df["is_ksi"].mean())
+    if n < MIN_SAMPLE:
+        return Verdict(
+            "INSUFFICIENT", "Not enough data — ride with normal caution",
+            f"Fewer than {MIN_SAMPLE} matching crashes for these conditions ({n} found). "
+            f"The dataset can't tell us if these conditions are safer or riskier than typical.",
+            MUTED, n, 0.0, baseline, 0.0,
+        )
+    ksi = float(slice_df["is_ksi"].mean())
+    delta = (ksi - baseline) * 100
+    if delta <= 1:
+        head = "Conditions look unusually safe" if delta < -1 else "In line with the Austin baseline"
+        return Verdict("GO", head,
+            f"Serious-injury rate for these conditions is {ksi*100:.1f}% vs the "
+            f"{baseline*100:.1f}% citywide baseline ({delta:+.1f} pp). Helmet on, lights on — ride.",
+            GREEN, n, ksi, baseline, delta)
+    if delta <= 5:
+        return Verdict("CAUTION", "Riskier than typical Austin conditions",
+            f"Serious-injury rate for these conditions is {ksi*100:.1f}% vs the "
+            f"{baseline*100:.1f}% citywide baseline ({delta:+.1f} pp). Ride with extra caution "
+            f"or shift one variable.",
+            AMBER, n, ksi, baseline, delta)
+    return Verdict("NO-GO", "Well above the Austin baseline — reconsider",
+        f"Serious-injury rate for these conditions is {ksi*100:.1f}% vs the "
+        f"{baseline*100:.1f}% citywide baseline ({delta:+.1f} pp). Consider waiting, driving, "
+        f"or changing route.",
+        RED, n, ksi, baseline, delta)
+
+
+def compute_drivers(slice_df: pd.DataFrame, all_df: pd.DataFrame) -> list[tuple[str, str]]:
+    if len(slice_df) < MIN_SAMPLE:
+        return [
+            ("⚠️", "Sample is too small for confident drivers — defaulting to baseline precautions."),
+            ("✅", "Helmet on, lights on, bright/visible clothing."),
+            ("✅", "Stay off main travel lanes when possible — they account for most crashes citywide."),
+        ]
+    items: list[tuple[str, str]] = []
+    base = float(all_df["is_ksi"].mean())
+
+    by_hour = slice_df.groupby("hour").agg(n=("is_ksi", "size"), ksi=("is_ksi", "mean"))
+    worst = by_hour[by_hour.n >= 10].sort_values("ksi", ascending=False)
+    if len(worst) and worst.iloc[0].ksi >= 1.5 * base:
+        h = int(worst.index[0])
+        items.append(("⚠️", f"Avoid {h:02d}:00–{(h+1) % 24:02d}:00 — worst hour in your filter at "
+                            f"{worst.iloc[0].ksi * 100:.0f}% serious-injury rate."))
+
+    rd = slice_df["Roadway Part"].value_counts(normalize=True)
+    if len(rd) and rd.iloc[0] > 0.40:
+        items.append(("⚠️", f"Stay off {rd.index[0]} — accounts for {rd.iloc[0] * 100:.0f}% of "
+                            f"crashes in your filter."))
+
+    helmet_share = (slice_df["helmet"] == "Not Worn").mean()
+    if helmet_share > 0.30:
+        items.append(("✅", f"Helmet on — {helmet_share * 100:.0f}% of riders in these crashes "
+                            f"weren't wearing one."))
+
+    valid_tr = all_df["Average Daily Traffic Amount"].dropna()
+    if len(valid_tr):
+        q3 = valid_tr.quantile(0.75)
+        slice_tr = slice_df["Average Daily Traffic Amount"].dropna()
+        if len(slice_tr):
+            high = (slice_tr >= q3).mean()
+            if high > 0.25:
+                items.append(("⚠️", f"High-traffic streets dominate this slice ({high * 100:.0f}%) "
+                                    f"— pick lower-traffic alternates."))
+
+    base_c = (all_df["Construction Zone Flag"] == "Yes").mean()
+    sl_c = (slice_df["Construction Zone Flag"] == "Yes").mean()
+    if base_c > 0 and sl_c >= 2 * base_c and sl_c > 0.05:
+        items.append(("⚠️", f"Construction zones overrepresented — {sl_c * 100:.0f}% of these crashes."))
+
+    base_s = (all_df["Active School Zone Flag"] == "Yes").mean()
+    sl_s = (slice_df["Active School Zone Flag"] == "Yes").mean()
+    if base_s > 0 and sl_s >= 2 * base_s and sl_s > 0.03:
+        items.append(("⚠️", f"School zones flagged in {sl_s * 100:.0f}% of these crashes — "
+                            f"extra vigilance during arrival/dismissal."))
+
+    if not any("Helmet" in s or "helmet" in s for _, s in items):
+        items.append(("✅", f"Helmet check — {helmet_share * 100:.0f}% of riders in these crashes "
+                            f"weren't wearing one."))
+
+    while len(items) < 3:
+        extras = [
+            ("✅", "Lights on, bright clothing, signal turns clearly."),
+            ("✅", "Assume drivers don't see you — eye contact at intersections."),
+            ("✅", "Avoid riding right after rain — wet pavement adds risk."),
+        ]
+        for e in extras:
+            if e not in items and len(items) < 3:
+                items.append(e)
+    return items[:5]
+
+
+# ---------- FILTERING ----------
+def apply_filters(df: pd.DataFrame, f: dict) -> pd.DataFrame:
     out = df
-    if filters["time_of_day"] != "Any":
-        out = out[out["time_of_day"] == filters["time_of_day"]]
-    if filters["day_of_week"] != "Any":
-        out = out[out["Day of Week"] == filters["day_of_week"]]
-    if filters["roadway_part"] != "Any":
-        out = out[out["Roadway Part"] == filters["roadway_part"]]
-    if filters["surface"] != "Any":
-        out = out[out["weather_proxy"] == filters["surface"]]
-    if filters["intersection"] != "Any":
-        out = out[out["Intersection Related"] == filters["intersection"]]
+    if f["time_band"] != "Any":
+        out = out[out["time_band"] == f["time_band"]]
+    if f["day"] != "Any":
+        out = out[out["Day of Week"] == f["day"]]
+    if f["roadway"] != "Any":
+        out = out[out["Roadway Part"] == f["roadway"]]
+    if f["surface"] != "Any":
+        out = out[out["Surface Condition"] == f["surface"]]
+    if f["intersection"] != "Any":
+        out = out[out["intersection_bucket"] == f["intersection"]]
+    if f["traffic_ctrl"] != "Any":
+        out = out[out["Traffic Control Type"] == f["traffic_ctrl"]]
+    sl_lo, sl_hi = f["speed_range"]
+    speed_mask = out["Speed Limit"].between(sl_lo, sl_hi) | out["Speed Limit"].isna()
+    out = out[speed_mask]
     return out
 
 
-def decide(filtered: pd.DataFrame, baseline: float) -> dict:
-    n = len(filtered)
-    if n < MIN_SAMPLE_SIZE:
-        return {
-            "mode": "UNKNOWN",
-            "headline": "Insufficient data",
-            "subline": (
-                f"Only {n} crashes match these conditions — fewer than the "
-                f"{MIN_SAMPLE_SIZE} we need for a confident verdict. "
-                "Proceed with extreme caution and consider loosening a filter."
-            ),
-            "rate": None, "n": n, "delta_pct": None,
-        }
-
-    rate = filtered["is_ksi"].mean()
-    delta = (rate - baseline) / baseline * 100 if baseline > 0 else 0
-
-    if abs(delta) < 2:
-        return {
-            "mode": "SAFE",
-            "headline": "In line with the Austin baseline",
-            "subline": (
-                "Serious-injury rate for these conditions tracks the citywide "
-                f"average closely ({rate*100:.1f}% vs {baseline*100:.1f}%). "
-                "No condition-specific risk signal — ride with normal caution."
-            ),
-            "rate": rate, "n": n, "delta_pct": delta,
-        }
-    if delta > 0:
-        return {
-            "mode": "DANGER",
-            "headline": "Higher than typical risk",
-            "subline": (
-                f"Serious-injury rate runs {delta:.0f}% above the Austin "
-                "baseline for these conditions. Consider waiting, changing "
-                "your route, or skipping this ride."
-            ),
-            "rate": rate, "n": n, "delta_pct": delta,
-        }
-    return {
-        "mode": "SAFE",
-        "headline": "Lower than typical risk",
-        "subline": (
-            f"Serious-injury rate runs {abs(delta):.0f}% below the Austin "
-            "baseline for these conditions. Conditions look favorable — "
-            "stay alert anyway."
-        ),
-        "rate": rate, "n": n, "delta_pct": delta,
-    }
-
-
-# ---------------------------------------------------------------------
-# CHARTS — always teal/charcoal palette (page never goes dark)
-# ---------------------------------------------------------------------
-def hour_day_heatmap(df: pd.DataFrame) -> alt.Chart:
-    day_order = ["Monday", "Tuesday", "Wednesday", "Thursday",
-                 "Friday", "Saturday", "Sunday"]
-    pivot = (
-        df.groupby(["Day of Week", "hour"])
-        .agg(crashes=("is_ksi", "size"), ksi=("is_ksi", "sum"))
-        .reset_index()
+# ---------- CHART HELPERS ----------
+def base_layout(height: int = 220, b: int = 28, t: int = 20, l: int = 36, r: int = 8) -> dict:
+    return dict(
+        margin=dict(l=l, r=r, t=t, b=b),
+        paper_bgcolor=SURFACE, plot_bgcolor=SURFACE,
+        height=height, showlegend=False, autosize=False,
+        font=dict(family=FONT, size=10, color=BODY),
+        hoverlabel=dict(bgcolor=INK, font_color="white", font_family=FONT),
     )
-    pivot["ksi_rate"] = pivot["ksi"] / pivot["crashes"]
-    pivot.loc[pivot["crashes"] < 5, "ksi_rate"] = np.nan
 
-    return (
-        alt.Chart(pivot)
-        .mark_rect(stroke=WHITE, strokeWidth=1)
-        .encode(
-            x=alt.X("hour:O", title=None,
-                    axis=alt.Axis(labelFontSize=9, titleFontSize=10,
-                                  labelColor=MUTED, titleColor=MUTED,
-                                  domainColor=MUTED, tickColor=MUTED,
-                                  labelOverlap=True)),
-            y=alt.Y("Day of Week:N", sort=day_order, title=None,
-                    axis=alt.Axis(labelFontSize=9, labelColor=MUTED,
-                                  domainColor=MUTED, tickColor=MUTED)),
-            color=alt.Color(
-                "ksi_rate:Q",
-                scale=alt.Scale(range=["#F4F4F4", TEAL]),
-                legend=alt.Legend(title="KSI rate", format=".0%",
-                                  orient="right", titleFontSize=9,
-                                  labelFontSize=8, titleColor=MUTED,
-                                  labelColor=MUTED, gradientLength=120,
-                                  gradientThickness=8),
-            ),
-            tooltip=[
-                alt.Tooltip("Day of Week:N", title="Day"),
-                alt.Tooltip("hour:O", title="Hour"),
-                alt.Tooltip("crashes:Q", title="Crashes"),
-                alt.Tooltip("ksi_rate:Q", format=".1%", title="KSI rate"),
+
+def empty_fig(height: int = 220, msg: str = "No data for this slice") -> go.Figure:
+    fig = go.Figure()
+    fig.add_annotation(text=msg, x=0.5, y=0.5, xref="paper", yref="paper",
+                       showarrow=False, font=dict(color=MUTED, size=11))
+    fig.update_layout(**base_layout(height=height),
+                      xaxis=dict(visible=False), yaxis=dict(visible=False))
+    return fig
+
+
+def gauge_chart(v: Verdict) -> go.Figure:
+    if v.code == "INSUFFICIENT" or v.baseline == 0:
+        score, color = 0, MUTED
+    else:
+        score = float(min(100, (v.ksi_rate / v.baseline) * 50))
+        color = v.color
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number", value=score,
+        number={"font": {"size": 36, "color": INK}, "valueformat": ".0f"},
+        gauge={
+            "axis": {"range": [0, 100], "tickwidth": 0,
+                     "tickfont": {"size": 9, "color": MUTED}, "nticks": 5},
+            "bar": {"color": color, "thickness": 0.55},
+            "bgcolor": SURFACE, "borderwidth": 0,
+            "steps": [
+                {"range": [0, 50], "color": GREEN_SOFT},
+                {"range": [50, 75], "color": AMBER_SOFT},
+                {"range": [75, 100], "color": RED_SOFT},
             ],
-        )
-        .properties(height=170, background="transparent")
-        .configure_view(stroke=None)
-        .configure_axis(grid=False)
-    )
+        }, domain={"x": [0, 1], "y": [0, 1]},
+    ))
+    fig.update_layout(**base_layout(height=170, b=8, t=4, l=6, r=6))
+    return fig
 
 
-def severity_breakdown_chart(filtered: pd.DataFrame) -> alt.Chart:
-    sev = (
-        filtered["Crash Severity"]
-        .value_counts()
-        .rename_axis("severity")
-        .reset_index(name="count")
-    )
-    return (
-        alt.Chart(sev)
-        .mark_bar(cornerRadius=3, height=14)
-        .encode(
-            y=alt.Y("severity:N", sort="-x", title=None,
-                    axis=alt.Axis(labelFontSize=9, labelColor=MUTED,
-                                  domainColor=MUTED, tickColor=MUTED,
-                                  labelLimit=140)),
-            x=alt.X("count:Q", title=None,
-                    axis=alt.Axis(labelFontSize=8, grid=False,
-                                  labelColor=MUTED, domainColor=MUTED,
-                                  tickColor=MUTED)),
-            color=alt.condition(
-                alt.FieldOneOfPredicate(field="severity",
-                                        oneOf=list(KSI_SEVERITIES)),
-                alt.value(TEAL),
-                alt.value("#D8D8D8"),
-            ),
-            tooltip=[alt.Tooltip("severity:N"), alt.Tooltip("count:Q")],
-        )
-        .properties(height=110, background="transparent")
-        .configure_view(stroke=None)
-    )
+def hour_curve(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: str) -> go.Figure:
+    hours_idx = pd.Index(range(24), name="hour")
+    if len(slice_df) == 0:
+        return empty_fig(height=220)
+    cur = slice_df.groupby("hour")["is_ksi"].mean().reindex(hours_idx, fill_value=0) * 100
+    base = all_df.groupby("hour")["is_ksi"].mean().reindex(hours_idx, fill_value=0) * 100
+    cur_n = slice_df.groupby("hour").size().reindex(hours_idx, fill_value=0)
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=hours_idx, y=base, mode="lines",
+                             line=dict(color=MUTED, width=1, dash="dash"),
+                             name="Baseline", hoverinfo="skip"))
+    fig.add_trace(go.Scatter(
+        x=hours_idx, y=cur, mode="lines+markers",
+        line=dict(color=color, width=2.4, shape="spline"),
+        marker=dict(color=color, size=6, line=dict(color="white", width=1.5)),
+        fill="tozeroy", fillcolor=f"rgba({int(color[1:3], 16)},{int(color[3:5], 16)},{int(color[5:7], 16)},0.10)",
+        hovertemplate="%{x:02d}:00<br>%{y:.1f}% serious-injury<br>%{customdata} crashes<extra></extra>",
+        customdata=cur_n.values, name="Slice",
+    ))
+    now_h = datetime.now().hour
+    fig.add_vline(x=now_h, line=dict(color=INK, width=1, dash="dot"),
+                  annotation_text=f"Now: {now_h:02d}:00", annotation_position="top right",
+                  annotation_font=dict(size=10, color=INK))
+    if cur.max() > 0:
+        worst_h = int(cur.idxmax())
+        fig.add_annotation(x=worst_h, y=float(cur.max()),
+                           text=f"Worst: {cur.max():.0f}% @ {worst_h:02d}:00",
+                           showarrow=True, arrowhead=0, ax=0, ay=-22,
+                           font=dict(size=9, color=color), bgcolor="white",
+                           bordercolor=BORDER, borderwidth=1)
+    fig.update_layout(**base_layout(height=220, l=44, b=30))
+    fig.update_yaxes(ticksuffix="%", gridcolor=BORDER, zeroline=False)
+    fig.update_xaxes(showgrid=False, dtick=4, range=[-0.5, 23.5])
+    return fig
 
 
-# ---------------------------------------------------------------------
-# UI
-# ---------------------------------------------------------------------
-BIKE_SVG = '''
-<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
-     stroke-linecap="round" stroke-linejoin="round">
-  <circle cx="5.5" cy="17.5" r="3.5"/>
-  <circle cx="18.5" cy="17.5" r="3.5"/>
-  <path d="M15 6h2l2 5-3 6-4-7-3-1h-2"/>
-  <path d="M5.5 17.5l4-7"/>
-</svg>
-'''
+def small_multiple(slice_df: pd.DataFrame, baseline: float, dim: str,
+                   order: Optional[list] = None, color: str = GREEN) -> go.Figure:
+    if len(slice_df) == 0:
+        return empty_fig(height=120)
+    grp = slice_df.groupby(dim).agg(n=("is_ksi", "size"), ksi=("is_ksi", "mean"))
+    if order is not None:
+        grp = grp.reindex(order).fillna(0)
+    else:
+        grp = grp.sort_values("ksi", ascending=False).head(8)
+    if len(grp) == 0:
+        return empty_fig(height=120)
+    rates = grp["ksi"].values * 100
+    bar_colors = [color if r > baseline * 100 else "#D1D5DB" for r in rates]
+    fig = go.Figure(go.Bar(
+        x=[str(i) for i in grp.index], y=rates, marker_color=bar_colors,
+        hovertemplate="%{x}<br>%{y:.1f}% KSI<br>%{customdata} crashes<extra></extra>",
+        customdata=grp["n"].values, width=0.7,
+    ))
+    fig.add_hline(y=baseline * 100, line=dict(color=MUTED, width=1, dash="dot"))
+    fig.update_layout(**base_layout(height=120, l=28, r=4, t=4, b=22))
+    fig.update_yaxes(range=[0, max(40, rates.max() * 1.2 if len(rates) else 40)],
+                     ticksuffix="%", gridcolor=BORDER, tickfont=dict(size=8), nticks=3)
+    fig.update_xaxes(showgrid=False, tickfont=dict(size=8))
+    return fig
 
 
-def render_brand():
-    st.markdown(
-        f'<div class="brand-row">'
-        f'<div class="brand-icon">{BIKE_SVG}</div>'
-        f'<div class="brand-name">Austin CycleSafe</div>'
-        f'<div class="brand-tag">Go / No-Go decision · 2,463 crashes · 2010–2017 City of Austin</div>'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
+def hour_curve_small(slice_df: pd.DataFrame, baseline: float, color: str) -> go.Figure:
+    if len(slice_df) == 0:
+        return empty_fig(height=120)
+    hours_idx = pd.Index(range(24), name="hour")
+    cur = slice_df.groupby("hour")["is_ksi"].mean().reindex(hours_idx, fill_value=0) * 100
+    fig = go.Figure(go.Scatter(
+        x=hours_idx, y=cur, mode="lines",
+        line=dict(color=color, width=2, shape="spline"),
+        fill="tozeroy",
+        fillcolor=f"rgba({int(color[1:3], 16)},{int(color[3:5], 16)},{int(color[5:7], 16)},0.10)",
+        hovertemplate="%{x:02d}:00<br>%{y:.1f}% KSI<extra></extra>",
+    ))
+    fig.add_hline(y=baseline * 100, line=dict(color=MUTED, width=1, dash="dot"))
+    fig.update_layout(**base_layout(height=120, l=28, r=4, t=4, b=22))
+    fig.update_yaxes(range=[0, 40], ticksuffix="%", gridcolor=BORDER,
+                     tickfont=dict(size=8), nticks=3)
+    fig.update_xaxes(showgrid=False, dtick=6, tickfont=dict(size=8))
+    return fig
 
 
-def render_filters(df: pd.DataFrame) -> dict:
-    c1, c2, c3, c4, c5 = st.columns(5)
+def severity_bar(slice_df: pd.DataFrame, color: str) -> go.Figure:
+    if len(slice_df) == 0:
+        return empty_fig(height=180)
+    order = ["Killed", "Incapacitating Injury", "Non-Incapacitating Injury",
+             "Possible Injury", "Not Injured"]
+    counts = slice_df["Crash Severity"].value_counts().reindex(order, fill_value=0)
+    colors = [color, color, "#D1D5DB", "#D1D5DB", "#D1D5DB"]
+    fig = go.Figure(go.Bar(
+        y=[s.replace("Incapacitating", "Incap.").replace("Non-Incap.", "Non-incap.") for s in counts.index],
+        x=counts.values, orientation="h", marker_color=colors,
+        text=counts.values, textposition="outside", textfont=dict(size=10, color=INK),
+        hovertemplate="%{y}<br>%{x} crashes<extra></extra>",
+    ))
+    fig.update_layout(**base_layout(height=180, l=110, r=24, t=4, b=14))
+    fig.update_xaxes(visible=False)
+    fig.update_yaxes(autorange="reversed", tickfont=dict(size=10))
+    return fig
+
+
+def heatmap(slice_df: pd.DataFrame, color: str) -> go.Figure:
+    if len(slice_df) == 0:
+        return empty_fig(height=180)
+    days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    day_map = dict(zip(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
+                        "Saturday", "Sunday"], days))
+    df2 = slice_df.copy()
+    df2["d_short"] = df2["Day of Week"].map(day_map)
+    grp = df2.groupby(["d_short", "hour"]).agg(n=("is_ksi", "size"),
+                                               ksi=("is_ksi", "mean")).reset_index()
+    z = np.full((7, 24), np.nan)
+    counts = np.zeros((7, 24), dtype=int)
+    for _, r in grp.iterrows():
+        if r["d_short"] not in days: continue
+        i = days.index(r["d_short"]); j = int(r["hour"])
+        counts[i, j] = r["n"]
+        if r["n"] >= 5:
+            z[i, j] = r["ksi"] * 100
+    rgb = tuple(int(color[k:k+2], 16) for k in (1, 3, 5))
+    colorscale = [[0, "rgba(255,255,255,0)"],
+                  [0.001, f"rgba({rgb[0]},{rgb[1]},{rgb[2]},0.10)"],
+                  [1, f"rgba({rgb[0]},{rgb[1]},{rgb[2]},1)"]]
+    fig = go.Figure(go.Heatmap(
+        z=z, x=list(range(24)), y=days, colorscale=colorscale,
+        showscale=False, customdata=counts,
+        hovertemplate="%{y} %{x:02d}:00<br>%{z:.0f}% KSI<br>%{customdata} crashes<extra></extra>",
+        zmin=0, zmax=max(40, np.nanmax(z) if not np.isnan(z).all() else 40),
+        xgap=1, ygap=1,
+    ))
+    fig.update_layout(**base_layout(height=180, l=32, r=4, t=4, b=22))
+    fig.update_xaxes(dtick=4, tickfont=dict(size=8), showgrid=False)
+    fig.update_yaxes(tickfont=dict(size=9), showgrid=False)
+    return fig
+
+
+def roadway_breakdown(slice_df: pd.DataFrame, color: str) -> tuple[go.Figure, str]:
+    if len(slice_df) == 0:
+        return empty_fig(height=180), "No data."
+    counts = slice_df["Roadway Part"].value_counts().head(5)
+    pct = counts / counts.sum() * 100
+    bar_colors = [color] + ["#D1D5DB"] * (len(pct) - 1)
+    labels = [s.replace("/", " / ")[:24] for s in pct.index]
+    fig = go.Figure(go.Bar(
+        y=labels, x=pct.values, orientation="h", marker_color=bar_colors,
+        text=[f"{v:.0f}%" for v in pct.values], textposition="outside",
+        textfont=dict(size=10, color=INK),
+        hovertemplate="%{y}<br>%{x:.1f}% of slice<extra></extra>",
+    ))
+    fig.update_layout(**base_layout(height=180, l=140, r=30, t=4, b=12))
+    fig.update_xaxes(visible=False, range=[0, max(pct.values) * 1.18])
+    fig.update_yaxes(autorange="reversed", tickfont=dict(size=10))
+    cap = f"{pct.index[0]} dominates this slice ({pct.iloc[0]:.0f}%)."
+    return fig, cap
+
+
+def donut_pair(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: str
+               ) -> tuple[go.Figure, go.Figure, str, str]:
+    helmet_share = (slice_df["helmet"] == "Not Worn").mean() if len(slice_df) else 0
+    valid = all_df["Average Daily Traffic Amount"].dropna()
+    if len(valid) and len(slice_df):
+        q3 = valid.quantile(0.75)
+        sl_t = slice_df["Average Daily Traffic Amount"].dropna()
+        traffic_share = (sl_t >= q3).mean() if len(sl_t) else 0
+    else:
+        traffic_share = 0
+
+    def _donut(share: float, lab: str) -> go.Figure:
+        share_pct = max(0, min(100, share * 100))
+        fig = go.Figure(go.Pie(
+            values=[share_pct, 100 - share_pct], hole=0.7,
+            marker=dict(colors=[color, "#E5E7EB"], line=dict(color="white", width=1)),
+            textinfo="none", sort=False, direction="clockwise",
+            hovertemplate=lab + ": %{value:.0f}%<extra></extra>",
+        ))
+        fig.add_annotation(text=f"<b>{share_pct:.0f}%</b>", x=0.5, y=0.5,
+                           showarrow=False, font=dict(size=18, color=INK))
+        fig.update_layout(**base_layout(height=110, l=4, r=4, t=4, b=4),
+                          showlegend=False)
+        return fig
+    return (_donut(helmet_share, "Helmet not worn"),
+            _donut(traffic_share, "High-traffic exposure"),
+            f"{helmet_share * 100:.0f}% of riders in these crashes weren't wearing a helmet.",
+            f"{traffic_share * 100:.0f}% of these crashes happened on the busiest streets.")
+
+
+# ---------- STYLE ----------
+def inject_css() -> None:
+    st.markdown(f"""
+    <style>
+    html, body, .stApp {{ background: {SURFACE}; }}
+    body, .stApp, [data-testid="stAppViewContainer"] {{
+      font-family: {FONT}; color: {BODY};
+    }}
+    .block-container {{
+      padding-top: 0.6rem !important; padding-bottom: 0.4rem !important;
+      padding-left: 1.2rem !important; padding-right: 1.2rem !important;
+      max-width: 1480px;
+    }}
+    #MainMenu, footer, header[data-testid="stHeader"] {{ display: none !important; }}
+    div[data-testid="stToolbar"] {{ display: none !important; }}
+    /* Card */
+    .acs-card {{
+      background: {SURFACE}; border: 1px solid {BORDER}; border-radius: 16px;
+      padding: 20px; box-sizing: border-box;
+    }}
+    .acs-card.tight {{ padding: 14px 16px; }}
+    .acs-card h2, .acs-card h3, .acs-card .label {{
+      margin: 0; padding: 0; color: {INK};
+    }}
+    /* App bar */
+    .acs-appbar {{
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 4px 0 12px 0; border-bottom: 1px solid {BORDER}; margin-bottom: 14px;
+    }}
+    .acs-appbar .brand {{ font-weight: 700; color: {INK}; font-size: 18px; letter-spacing: -0.01em; }}
+    .acs-appbar .meta {{ font-size: 11px; color: {MUTED}; text-transform: uppercase; letter-spacing: 0.06em; }}
+    /* Filter rail labels */
+    .acs-flabel {{
+      font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+      color: {MUTED}; margin: 0 0 4px 0; font-weight: 600;
+    }}
+    /* Pill */
+    .acs-pill {{
+      display: inline-block; padding: 4px 10px; border-radius: 6px;
+      color: white; font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+      text-transform: uppercase; margin-bottom: 12px;
+    }}
+    /* Hero text */
+    .acs-hero {{
+      font-size: 30px; line-height: 1.2; font-weight: 700; color: {INK};
+      letter-spacing: -0.01em; margin: 0 0 8px 0;
+    }}
+    .acs-sub {{ font-size: 13px; line-height: 1.55; color: {BODY}; margin: 0 0 14px 0; }}
+    /* KPI strip */
+    .acs-kpi-row {{ display: flex; gap: 16px; padding-top: 12px; border-top: 1px solid {BORDER}; }}
+    .acs-kpi {{ flex: 1; }}
+    .acs-kpi .label {{
+      font-size: 10px; color: {MUTED}; text-transform: uppercase;
+      letter-spacing: 0.08em; font-weight: 600; margin-bottom: 4px;
+    }}
+    .acs-kpi .num {{ font-size: 24px; color: {INK}; font-weight: 700; line-height: 1; }}
+    /* Section title */
+    .acs-section {{
+      font-size: 14px; color: {INK}; font-weight: 700; margin: 0 0 8px 0;
+      letter-spacing: -0.005em;
+    }}
+    .acs-tile-title {{
+      font-size: 10px; color: {MUTED}; text-transform: uppercase;
+      letter-spacing: 0.08em; font-weight: 600; margin: 0 0 4px 0;
+    }}
+    /* Checklist */
+    .acs-check {{ display: flex; flex-direction: column; gap: 10px; }}
+    .acs-check .item {{
+      display: flex; align-items: flex-start; gap: 10px; font-size: 13px;
+      line-height: 1.45; color: {BODY};
+    }}
+    .acs-check .icon {{ flex: 0 0 auto; font-size: 14px; line-height: 1.4; }}
+    /* Tier label */
+    .acs-tier {{
+      text-align: center; font-size: 12px; color: {INK}; font-weight: 600;
+      letter-spacing: 0.04em; text-transform: uppercase; margin-top: 2px;
+    }}
+    .acs-tier .delta {{ display: block; font-size: 11px; font-weight: 500; color: {MUTED}; text-transform: none; letter-spacing: 0; margin-top: 2px; }}
+    /* Footer */
+    .acs-footer {{
+      font-size: 11px; color: {MUTED}; padding-top: 10px;
+      border-top: 1px solid {BORDER}; margin-top: 12px; letter-spacing: 0.02em;
+    }}
+    .acs-banner {{
+      font-size: 11px; color: {MUTED}; padding: 4px 8px;
+      background: {CARD}; border: 1px solid {BORDER}; border-radius: 6px;
+      display: inline-block; margin-bottom: 8px;
+    }}
+    .acs-caption {{ font-size: 11px; color: {MUTED}; margin-top: 4px; }}
+    /* Streamlit selectbox compaction */
+    div[data-baseweb="select"] > div {{
+      min-height: 36px !important; font-size: 13px !important;
+    }}
+    label[data-testid="stWidgetLabel"] {{ display: none !important; }}
+    div[data-testid="stSlider"] {{ padding-top: 4px; }}
+    </style>
+    """, unsafe_allow_html=True)
+
+
+# ---------- BANDS ----------
+def render_appbar(n_total: int) -> None:
+    st.markdown(f"""
+    <div class="acs-appbar">
+      <div class="brand">🚲 Austin CycleSafe</div>
+      <div class="meta">Go / No-Go decision · {n_total:,} crashes · 2010–2017 · City of Austin</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+def render_filter_rail(df: pd.DataFrame) -> dict:
+    cols = st.columns([1, 1, 1, 1, 1, 1, 1.4])
+    bands = ["Any", "Morning 5–10", "Midday 10–15", "Evening 15–19", "Night 19–5"]
+    days_unique = ["Any"] + [d for d in
+        ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        if d in df["Day of Week"].unique()]
+    rd_opts = ["Any"] + sorted(df["Roadway Part"].dropna().unique().tolist())
+    sf_opts = ["Any"] + sorted(df["Surface Condition"].dropna().unique().tolist())
+    isect_opts = ["Any", "Intersection", "Non Intersection"]
+    tc_opts = ["Any"] + df["Traffic Control Type"].value_counts().head(8).index.tolist()
+    sl_valid = df["Speed Limit"].dropna()
+    if len(sl_valid):
+        lo, hi = int(sl_valid.quantile(0.05)), int(sl_valid.quantile(0.95))
+    else:
+        lo, hi = 25, 45
+
+    labels = ["Time of Day", "Day", "Roadway", "Surface", "Intersection", "Traffic Control"]
+    options = [bands, days_unique, rd_opts, sf_opts, isect_opts, tc_opts]
+    keys = ["time_band", "day", "roadway", "surface", "intersection", "traffic_ctrl"]
+    out: dict = {}
+    for i, (col, lab, opts, k) in enumerate(zip(cols[:6], labels, options, keys)):
+        with col:
+            st.markdown(f'<div class="acs-flabel">{lab}</div>', unsafe_allow_html=True)
+            out[k] = st.selectbox(lab, opts, label_visibility="collapsed", key=f"flt_{k}")
+    with cols[6]:
+        st.markdown('<div class="acs-flabel">Speed Limit (mph)</div>', unsafe_allow_html=True)
+        out["speed_range"] = st.slider("Speed Limit", min_value=lo, max_value=hi,
+                                       value=(lo, hi), label_visibility="collapsed")
+    return out
+
+
+def render_decision_band(slice_df: pd.DataFrame, all_df: pd.DataFrame) -> None:
+    v = decide(slice_df, all_df)
+    drivers = compute_drivers(slice_df, all_df)
+    pill_color = {"GO": GREEN, "CAUTION": AMBER, "NO-GO": RED, "INSUFFICIENT": MUTED}[v.code]
+    your_disp = f"{v.ksi_rate*100:.1f}%" if v.code != "INSUFFICIENT" else "—"
+    base_disp = f"{v.baseline*100:.1f}%"
+    n_disp = f"{v.n:,}"
+
+    c1, c2, c3 = st.columns([1.6, 1.0, 1.0])
     with c1:
-        time_of_day = st.selectbox(
-            "Time of day",
-            ["Any", "Morning (5-10)", "Midday (10-15)",
-             "Evening (15-20)", "Night (20-24)", "Late night (0-5)"],
-        )
+        st.markdown(f"""
+        <div class="acs-card">
+          <span class="acs-pill" style="background:{pill_color};">{v.code}</span>
+          <div class="acs-hero">{v.headline}</div>
+          <div class="acs-sub">{v.sub}</div>
+          <div class="acs-kpi-row">
+            <div class="acs-kpi"><div class="label">Your conditions</div><div class="num" style="color:{pill_color};">{your_disp}</div></div>
+            <div class="acs-kpi"><div class="label">Austin baseline</div><div class="num">{base_disp}</div></div>
+            <div class="acs-kpi"><div class="label">Matching crashes</div><div class="num">{n_disp}</div></div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
     with c2:
-        day_of_week = st.selectbox(
-            "Day",
-            ["Any", "Monday", "Tuesday", "Wednesday", "Thursday",
-             "Friday", "Saturday", "Sunday"],
-        )
-    with c3:
-        roadway_part = st.selectbox(
-            "Roadway part",
-            ["Any"] + sorted(df["Roadway Part"].dropna().unique().tolist()),
-        )
-    with c4:
-        surface = st.selectbox(
-            "Surface",
-            ["Any"] + sorted(df["weather_proxy"].dropna().unique().tolist()),
-        )
-    with c5:
-        intersection = st.selectbox(
-            "Intersection",
-            ["Any"] + sorted(df["Intersection Related"].dropna().unique().tolist()),
-        )
-    return dict(time_of_day=time_of_day, day_of_week=day_of_week,
-                roadway_part=roadway_part, surface=surface, intersection=intersection)
-
-
-def explain_drivers(filtered: pd.DataFrame, baseline: float, verdict: dict) -> list[str]:
-    if verdict["mode"] == "UNKNOWN":
-        return [
-            f"Only <b>{verdict['n']}</b> historical crashes match this exact filter set.",
-            "Treat the silence as a warning, not an all-clear — the data simply doesn't cover this case.",
-            "Loosen one filter (e.g. drop the surface condition) to recover a usable sample.",
-        ]
-    out = []
-    if len(filtered) > 0:
-        h = (filtered.groupby("hour")["is_ksi"]
-             .agg(["size", "mean"]).query("size >= 5")
-             .sort_values("mean", ascending=False))
-        if len(h) > 0:
-            top_hour = int(h.index[0])
-            out.append(
-                f"Worst hour in your filter set is <b>{top_hour:02d}:00</b> "
-                f"— KSI rate of <b>{h.iloc[0]['mean']:.0%}</b>."
-            )
-        rp = filtered["Roadway Part"].value_counts(normalize=True)
-        if len(rp) > 0:
-            out.append(
-                f"<b>{rp.index[0]}</b> dominates this slice "
-                f"({rp.iloc[0]:.0%} of matching crashes)."
-            )
-        helm = filtered["Person Helmet"].value_counts(normalize=True)
-        if "Not Worn" in helm.index:
-            out.append(
-                f"Helmet not worn in <b>{helm['Not Worn']:.0%}</b> of matching "
-                "crashes — wear yours."
-            )
-        if verdict["delta_pct"] is not None and abs(verdict["delta_pct"]) >= 20:
-            direction = "above" if verdict["delta_pct"] > 0 else "below"
-            out.append(
-                f"Your conditions are <b>{abs(verdict['delta_pct']):.0f}% {direction}</b> "
-                "the citywide serious-injury rate — a meaningful effect, not noise."
-            )
-    return out[:4] or ["Verdict tracks the citywide baseline. Add filters to refine."]
-
-
-# ---------------------------------------------------------------------
-# PANEL RENDERERS
-# Each renders inside an st.container(border=True) so children nest
-# in the bordered DOM node. Only the verdict panel uses a mode class.
-# ---------------------------------------------------------------------
-def render_verdict_panel(verdict: dict, baseline: float, mode_class: str):
-    with st.container(border=True):
-        nums_html = ""
-        if verdict["mode"] != "UNKNOWN":
-            nums_html = (
-                '<div class="verdict-numbers">'
-                f'<div class="cell"><span class="num">{verdict["rate"]*100:.1f}%</span>'
-                f'<span class="lbl">Your conditions</span></div>'
-                f'<div class="cell"><span class="num">{baseline*100:.1f}%</span>'
-                f'<span class="lbl">Austin baseline</span></div>'
-                f'<div class="cell"><span class="num">{verdict["n"]:,}</span>'
-                f'<span class="lbl">Matching crashes</span></div>'
-                '</div>'
-            )
-        # The mode-X class on .verdict-content is what makes the panel
-        # container flip charcoal in DANGER mode (via :has()).
-        st.markdown(
-            f'<div class="verdict-content mode-{mode_class}">'
-            f'<div class="verdict-mode">{verdict["mode"]}</div>'
-            f'<h1 class="verdict-headline">{verdict["headline"]}</h1>'
-            f'<p class="verdict-sub">{verdict["subline"]}</p>'
-            f'{nums_html}'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-
-
-def render_heatmap_panel(df: pd.DataFrame):
-    with st.container(border=True):
-        st.markdown('<div class="sec-h">When crashes turn serious</div>',
-                    unsafe_allow_html=True)
-        st.altair_chart(hour_day_heatmap(df), use_container_width=True)
-        st.markdown(
-            '<div class="prov">Hour × day · KSI rate · cells with &lt; 5 crashes shown blank</div>',
-            unsafe_allow_html=True,
-        )
-
-
-def render_selection_panel(filtered: pd.DataFrame):
-    with st.container(border=True):
-        st.markdown('<div class="sec-h">What\'s in your selection</div>',
-                    unsafe_allow_html=True)
-        if len(filtered) == 0:
-            st.markdown(
-                '<div class="empty-state">No crashes match these filters.<br>'
-                '<span class="muted">Loosen one to see the breakdown.</span></div>',
-                unsafe_allow_html=True,
-            )
+        st.markdown('<div class="acs-card tight">', unsafe_allow_html=True)
+        st.markdown('<div class="acs-tile-title">Risk gauge</div>', unsafe_allow_html=True)
+        st.plotly_chart(gauge_chart(v), use_container_width=True,
+                        config={"displayModeBar": False, "responsive": True})
+        if v.code == "INSUFFICIENT":
+            tier, delta_lbl = "Insufficient", f"{v.n} matching crashes"
         else:
-            speed_med = filtered["speed_limit_clean"].median()
-            speed_str = f"{int(speed_med)}" if pd.notna(speed_med) else "—"
-            st.markdown(
-                f'<div class="metric-block">'
-                f'<div class="metric-card"><span class="num">{len(filtered):,}</span>'
-                f'<span class="lbl">Matching crashes</span></div>'
-                f'<div class="metric-card"><span class="num">{speed_str}</span>'
-                f'<span class="lbl">Median speed limit</span></div>'
-                f'<div class="metric-card"><span class="num">{filtered["is_ksi"].sum()}</span>'
-                f'<span class="lbl">Serious injuries</span></div>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-            st.altair_chart(severity_breakdown_chart(filtered),
-                            use_container_width=True)
-        st.markdown(
-            '<div class="prov">K + I bars highlighted · all other severities muted</div>',
-            unsafe_allow_html=True,
-        )
-
-
-def render_why_panel(filtered: pd.DataFrame, baseline: float, verdict: dict):
-    with st.container(border=True):
-        st.markdown('<div class="sec-h">What\'s driving the call</div>',
+            score = min(100, (v.ksi_rate / v.baseline) * 50) if v.baseline else 0
+            tier = "Low" if score < 50 else ("Elevated" if score < 75 else "High")
+            delta_lbl = f"{v.delta_pp:+.1f} pp vs baseline"
+        st.markdown(f'<div class="acs-tier">{tier}<span class="delta">{delta_lbl}</span></div>',
                     unsafe_allow_html=True)
-        factors_html = "".join(
-            f'<div class="factor">{line}</div>'
-            for line in explain_drivers(filtered, baseline, verdict)
+        st.markdown('</div>', unsafe_allow_html=True)
+    with c3:
+        items_html = "".join(
+            f'<div class="item"><div class="icon">{ic}</div><div>{msg}</div></div>'
+            for ic, msg in drivers
         )
-        st.markdown(factors_html, unsafe_allow_html=True)
-        st.markdown(
-            f'<div class="prov">Sample-size floor: {MIN_SAMPLE_SIZE} crashes · '
-            'KSI = Killed + Incapacitating Injury</div>',
-            unsafe_allow_html=True,
-        )
+        st.markdown(f"""
+        <div class="acs-card tight">
+          <div class="acs-tile-title">Before you ride</div>
+          <div class="acs-check">{items_html}</div>
+        </div>
+        """, unsafe_allow_html=True)
 
 
-# ---------------------------------------------------------------------
-# MAIN
-# ---------------------------------------------------------------------
-def main():
-    df = load_data()
-    baseline = baseline_ksi_rate(df)
+def render_pattern_band(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: str) -> None:
+    baseline = float(all_df["is_ksi"].mean())
+    left, right = st.columns([1.5, 1.0])
 
-    inject_css()           # single payload — page is always white/teal
-    render_brand()
-    filters = render_filters(df)
+    with left:
+        st.markdown('<div class="acs-card tight">', unsafe_allow_html=True)
+        st.markdown('<div class="acs-section">Where the risk lives in your data</div>',
+                    unsafe_allow_html=True)
+        r1 = st.columns(3); r2 = st.columns(3)
+        tiles = [
+            ("By hour", lambda: hour_curve_small(slice_df, baseline, color), r1[0]),
+            ("By day of week",
+             lambda: small_multiple(slice_df, baseline, "Day of Week",
+                ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+                color), r1[1]),
+            ("By roadway part",
+             lambda: small_multiple(slice_df, baseline, "Roadway Part", color=color), r1[2]),
+            ("By speed limit",
+             lambda: small_multiple(slice_df, baseline, "speed_bucket",
+                ["≤25", "30", "35", "40", "≥45"], color), r2[0]),
+            ("By surface",
+             lambda: small_multiple(slice_df, baseline, "Surface Condition", color=color), r2[1]),
+            ("By intersection",
+             lambda: small_multiple(slice_df, baseline, "intersection_bucket",
+                ["Intersection", "Non Intersection", "Other"], color), r2[2]),
+        ]
+        for title, fn, col in tiles:
+            with col:
+                st.markdown(f'<div class="acs-tile-title">{title}</div>', unsafe_allow_html=True)
+                st.plotly_chart(fn(), use_container_width=True,
+                                config={"displayModeBar": False, "responsive": True})
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    filtered = filter_df(df, filters)
-    verdict = decide(filtered, baseline)
-    mode_class = verdict["mode"].lower()
+    with right:
+        st.markdown('<div class="acs-card tight">', unsafe_allow_html=True)
+        st.markdown('<div class="acs-section">When risk peaks across the day</div>',
+                    unsafe_allow_html=True)
+        st.plotly_chart(hour_curve(slice_df, all_df, color), use_container_width=True,
+                        config={"displayModeBar": False, "responsive": True})
+        st.markdown('<div class="acs-caption">Dotted line is the citywide baseline. '
+                    'Vertical rule marks the current local hour.</div>',
+                    unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    # Row 1: verdict + heatmap
-    top_left, top_right = st.columns([1, 1.15], gap="medium")
-    with top_left:
-        render_verdict_panel(verdict, baseline, mode_class)
-    with top_right:
-        render_heatmap_panel(df)
 
-    # Row 2: selection + why
-    bot_left, bot_right = st.columns([1, 1.15], gap="medium")
-    with bot_left:
-        render_selection_panel(filtered)
-    with bot_right:
-        render_why_panel(filtered, baseline, verdict)
+def render_drivers_strip(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: str) -> None:
+    cols = st.columns(4)
+    rd_fig, rd_cap = roadway_breakdown(slice_df, color)
+    don_helm, don_traf, helm_cap, traf_cap = donut_pair(slice_df, all_df, color)
+
+    with cols[0]:
+        st.markdown('<div class="acs-card tight">', unsafe_allow_html=True)
+        st.markdown('<div class="acs-tile-title">Severity mix</div>', unsafe_allow_html=True)
+        st.plotly_chart(severity_bar(slice_df, color), use_container_width=True,
+                        config={"displayModeBar": False, "responsive": True})
+        st.markdown('</div>', unsafe_allow_html=True)
+    with cols[1]:
+        st.markdown('<div class="acs-card tight">', unsafe_allow_html=True)
+        st.markdown('<div class="acs-tile-title">Day × hour heatmap</div>',
+                    unsafe_allow_html=True)
+        st.plotly_chart(heatmap(slice_df, color), use_container_width=True,
+                        config={"displayModeBar": False, "responsive": True})
+        st.markdown('</div>', unsafe_allow_html=True)
+    with cols[2]:
+        st.markdown('<div class="acs-card tight">', unsafe_allow_html=True)
+        st.markdown('<div class="acs-tile-title">Roadway breakdown</div>',
+                    unsafe_allow_html=True)
+        st.plotly_chart(rd_fig, use_container_width=True,
+                        config={"displayModeBar": False, "responsive": True})
+        st.markdown(f'<div class="acs-caption">{rd_cap}</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+    with cols[3]:
+        st.markdown('<div class="acs-card tight">', unsafe_allow_html=True)
+        st.markdown('<div class="acs-tile-title">Helmet & traffic exposure</div>',
+                    unsafe_allow_html=True)
+        d1, d2 = st.columns(2)
+        with d1:
+            st.plotly_chart(don_helm, use_container_width=True,
+                            config={"displayModeBar": False, "responsive": True})
+            st.markdown('<div class="acs-caption" style="text-align:center;">Helmet not worn</div>',
+                        unsafe_allow_html=True)
+        with d2:
+            st.plotly_chart(don_traf, use_container_width=True,
+                            config={"displayModeBar": False, "responsive": True})
+            st.markdown('<div class="acs-caption" style="text-align:center;">High-traffic exposure</div>',
+                        unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+
+def render_footer() -> None:
+    st.markdown("""
+    <div class="acs-footer">
+      Sample-size floor: 30 crashes · KSI = Killed + Incapacitating Injury ·
+      Data: City of Austin Open Data, 2010–2017 ·
+      Built for the Week 4 Building Products assignment.
+    </div>
+    """, unsafe_allow_html=True)
+
+
+# ---------- MAIN ----------
+def main() -> None:
+    inject_css()
+    df, source = load_data()
+
+    render_appbar(len(df))
+    if "synthetic" in source.lower():
+        st.markdown(f'<div class="acs-banner">Data source: {source}. '
+                    f'Drop a real <code>bike_crash.csv</code> next to this app to use live data.</div>',
+                    unsafe_allow_html=True)
+
+    filters = render_filter_rail(df)
+    sliced = apply_filters(df, filters)
+
+    v = decide(sliced, df)
+    band_color = {"GO": GREEN, "CAUTION": AMBER, "NO-GO": RED, "INSUFFICIENT": MUTED}[v.code]
+
+    render_decision_band(sliced, df)
+    render_pattern_band(sliced, df, band_color)
+    render_drivers_strip(sliced, df, band_color)
+    render_footer()
 
 
 if __name__ == "__main__":
