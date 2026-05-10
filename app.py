@@ -416,24 +416,26 @@ st.markdown(
     transform: translateY(-1px);
     box-shadow: 0 2px 6px rgba(17,24,39,0.08), 0 4px 12px rgba(17,24,39,0.04);
   }}
-  /* Wrap every Plotly chart in a clean white card. Card sizes to its Plotly
-     content (CHART_INNER_HEIGHT + padding). The min-height: 0 / min-width: 0
-     pair is the critical "let me shrink" trick that prevents grid items from
-     overflowing their parent. */
+  /* LIQUID chart card — flex-grows to fill its column. Plotly inside
+     autosizes to the card. min-height: 0 lets it shrink in a flex parent. */
   div[data-testid="stPlotlyChart"] {{
     background: {SURFACE};
     border: 1px solid {BORDER};
     border-radius: 10px;
     padding: 4px 6px 2px 6px;
     box-shadow: 0 1px 2px rgba(17,24,39,0.04), 0 1px 4px rgba(17,24,39,0.03);
-    margin: 0 0 4px 0 !important;
+    margin: 0 !important;
     box-sizing: border-box;
     overflow: hidden !important;
     min-height: 0 !important;
     min-width: 0 !important;
+    flex: 1 1 0 !important;        /* fill the column's height */
+    height: 100% !important;
+    width: 100% !important;
   }}
-  /* Belt-and-braces: every nested Plotly element forced to hide overflow,
-     so even if Plotly mis-renders, the user never sees a scrollbar. */
+  /* Force every nested Plotly element to fill the card 100% AND clip overflow.
+     Two effects in one rule: charts grow with the card (liquid) AND any
+     mis-rendered content stays inside (no scrollbar). */
   div[data-testid="stPlotlyChart"] > div,
   div[data-testid="stPlotlyChart"] .js-plotly-plot,
   div[data-testid="stPlotlyChart"] .plot-container,
@@ -441,30 +443,66 @@ st.markdown(
   div[data-testid="stPlotlyChart"] .user-select-none,
   div[data-testid="stPlotlyChart"] .draglayer,
   div[data-testid="stPlotlyChart"] .main-svg {{
+    height: 100% !important;
+    width: 100% !important;
     overflow: hidden !important;
     overflow-x: hidden !important;
     overflow-y: hidden !important;
   }}
-  /* Column wrappers around chart cards: lock overflow + allow shrink.
-     min-height: 0 is the standard "let grid/flex children actually shrink"
-     trick — without it, content larger than its share forces the parent
-     to grow and reintroduces scrollbars. */
+  /* Column wrappers around chart cards: flex-grow to fill, no overflow. */
   div[data-testid="column"]:has(div[data-testid="stPlotlyChart"]) {{
     overflow: hidden !important;
     min-height: 0 !important;
     min-width: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 1 0 !important;
   }}
   div[data-testid="column"]:has(div[data-testid="stPlotlyChart"])
     > div[data-testid="stVerticalBlock"] {{
     overflow: hidden !important;
     min-height: 0 !important;
     min-width: 0 !important;
+    flex: 1 1 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
   }}
-  /* The horizontal block that holds the 2-column chart row also needs
-     min-height: 0 to participate cleanly in a fixed-height layout. */
+  /* The horizontal block holding a 2-column chart row flex-grows to take
+     its share of the tab panel height. Two such rows share equally. */
   div[data-testid="stHorizontalBlock"]:has(div[data-testid="stPlotlyChart"]) {{
     min-height: 0 !important;
     min-width: 0 !important;
+    flex: 1 1 0 !important;
+    align-items: stretch !important;
+  }}
+
+  /* ===== MOBILE: stack 2x2 grid into 1-column. Allow page scroll. ===== */
+  @media (max-width: 768px) {{
+    /* On mobile, vertical scrolling is natural and expected — unlock it */
+    html, body, .stApp, [data-testid="stAppViewContainer"], section.main, .main {{
+      height: auto !important;
+      max-height: none !important;
+      overflow: auto !important;
+    }}
+    .stTabs {{
+      height: auto !important;
+    }}
+    [data-baseweb="tab-panel"] {{
+      overflow: visible !important;
+    }}
+    /* Fixed-height chart cards on mobile, stacked vertically by Streamlit */
+    div[data-testid="stPlotlyChart"] {{
+      flex: 0 0 auto !important;
+      height: 280px !important;
+    }}
+    div[data-testid="stHorizontalBlock"]:has(div[data-testid="stPlotlyChart"]) {{
+      flex: 0 0 auto !important;
+      flex-direction: column !important;
+    }}
+    div[data-testid="column"]:has(div[data-testid="stPlotlyChart"]) {{
+      flex: 0 0 auto !important;
+      width: 100% !important;
+    }}
   }}
   /* Reset the inner wrapper so styles don't double-apply */
   div[data-testid="stPlotlyChart"] > div {{
@@ -779,19 +817,19 @@ def _format_chart_title(name: str, subtitle: str) -> str:
             f"<span style='font-weight:400; color:{FG_MUTED};'>{subtitle}</span>")
 
 
-def _chart_layout(title: str, height: int = CHART_INNER_HEIGHT,
+def _chart_layout(title: str, height: int | None = None,
                   show_legend: bool = False) -> dict:
-    """Uniform chart layout. Fixed height matches the CSS card height EXACTLY,
-    so there's never internal whitespace inside the card. Charts with a legend
-    use the same total height; we just steal more of the bottom margin for it.
+    """Liquid chart layout — autosize lets Plotly grow with its container.
+    Inner Plotly elements forced to height:100% via CSS, so the chart
+    actually fills whatever flex height it gets allocated.
     """
-    return dict(
+    layout = dict(
         title=dict(text=title, font=dict(size=13, color=FG, family="Inter"),
                    x=0, xanchor="left", y=0.985, yanchor="top",
                    pad=dict(t=0, b=0)),
         margin=dict(l=64, r=20, t=30, b=38 if not show_legend else 56),
         paper_bgcolor=SURFACE, plot_bgcolor=SURFACE,
-        height=height, autosize=False, showlegend=show_legend,
+        autosize=True, showlegend=show_legend,
         legend=dict(orientation="h", x=0.5, xanchor="center",
                     y=-0.18, yanchor="top",
                     bgcolor="rgba(0,0,0,0)", borderwidth=0,
@@ -799,6 +837,10 @@ def _chart_layout(title: str, height: int = CHART_INNER_HEIGHT,
         font=dict(family="Inter", size=10, color=FG_MUTED),
         hoverlabel=dict(bgcolor=FG, font=dict(color="white", family="Inter")),
     )
+    if height is not None:
+        layout["height"] = height
+        layout["autosize"] = False
+    return layout
 
 
 # NOTE: @st.cache_data was removed from these chart functions because the
