@@ -43,23 +43,23 @@ st.set_page_config(
 
 # ---------- DESIGN TOKENS — Modern Minimal palette ----------
 # Two accent colors only: TEAL (brand + safer + buttons) and RED (risk).
-# Everything else is grayscale neutrals. SUCCESS is aliased to PRIMARY so
-# every "good / below baseline" indicator uses the same teal as the brand.
+# PRIMARY is the lighter button teal; SUCCESS is the darker teal used for
+# chart "below baseline" bars and other "safer" indicators that benefit from
+# a touch more contrast against the white card background.
 PRIMARY = "#0F766E"          # teal — brand, buttons, headings, route line
-PRIMARY_HOVER = "#115E59"    # darker teal for hover states
+PRIMARY_HOVER = "#115E59"    # darker teal — hover states + SUCCESS shade
 PRIMARY_SOFT = "#F0FDFA"     # very light teal tint for soft backgrounds
 BG = "#FAFAF9"               # warm off-white canvas
 SURFACE = "#FFFFFF"
 FG = "#111827"
 FG_MUTED = "#4B5563"
 BORDER = "#E5E7EB"
-SUCCESS = PRIMARY            # safer / below baseline → same teal as brand
+SUCCESS = "#115E59"          # safer / below baseline — darker teal (per user)
 DANGER = "#DC2626"           # above baseline / risk  (Tailwind red-600)
-# Soft (10% alpha) variants — derived from the main accents so they always
-# match. SUCCESS shares teal with PRIMARY, so SUCCESS_* tints share teal too.
-SUCCESS_SOFT = "rgba(15,118,110,0.10)"  # #0F766E at 10% alpha (teal)
+# Soft (10% alpha) variants — derived from the main accents.
+SUCCESS_SOFT = "rgba(17,94,89,0.10)"    # #115E59 at 10% alpha (darker teal)
 DANGER_SOFT = "rgba(220,38,38,0.10)"    # #DC2626 at 10% alpha (red)
-SUCCESS_TINT = "#F0FDFA"     # PRIMARY_SOFT — light teal tint behind safer
+SUCCESS_TINT = "#F0FDFA"     # very light teal tint behind safer banner
 DANGER_TINT = "#FEF2F2"      # background tint behind danger recommendations
 WARNING = PRIMARY            # alias kept so legacy refs don't break
 
@@ -86,14 +86,18 @@ st.markdown(
     text-transform: uppercase; letter-spacing: 0.10em; font-size: 0.72rem;
     font-weight: 600; color: {PRIMARY}; margin: 0 0 0.3rem 0;
   }}
-  .acs-question {{
-    font-size: clamp(0.78rem, 0.95vw, 0.92rem); font-weight: 600; line-height: 1.3;
-    letter-spacing: -0.01em; color: {FG}; margin: 0 0 0.4rem 0;
-    /* No truncation rules — font is small enough to fit naturally */
+  /* IMPORTANT overrides — Streamlit's default h1/p styles are huge and would
+     otherwise win the cascade. Lock the size to a single readable line. */
+  .acs-question, h1.acs-question, [data-testid="stMarkdown"] .acs-question {{
+    font-size: clamp(1rem, 1.25vw, 1.2rem) !important;
+    font-weight: 600 !important; line-height: 1.3 !important;
+    letter-spacing: -0.01em !important; color: {FG} !important;
+    margin: 0 0 0.4rem 0 !important; padding: 0 !important;
   }}
-  .acs-answer {{
-    font-size: clamp(0.75rem, 0.9vw, 0.85rem); line-height: 1.5; color: {FG_MUTED};
-    margin: 0; max-width: 70ch;
+  .acs-answer, p.acs-answer, [data-testid="stMarkdown"] .acs-answer {{
+    font-size: clamp(0.78rem, 0.92vw, 0.88rem) !important;
+    line-height: 1.5 !important; color: {FG_MUTED} !important;
+    margin: 0 !important; max-width: 70ch !important;
   }}
   .acs-answer .accent {{ color: {DANGER}; font-weight: 600; }}
   .acs-yes-tag {{
@@ -735,7 +739,7 @@ with tab_home:
     hero, kpis = st.columns([1.4, 1])
     with hero:
         st.markdown('<p class="acs-kicker">The question Austin&rsquo;s cyclists asked</p>', unsafe_allow_html=True)
-        st.markdown('<h1 class="acs-question">Is the city doing enough to protect people on bikes?</h1>',
+        st.markdown('<div class="acs-question">Is the city doing enough to protect people on bikes?</div>',
                     unsafe_allow_html=True)
         st.markdown(
             f'<p class="acs-answer"><span class="acs-yes-tag">No</span>'
