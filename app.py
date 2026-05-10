@@ -371,9 +371,9 @@ st.markdown(
     box-shadow: 0 2px 6px rgba(17,24,39,0.08), 0 4px 12px rgba(17,24,39,0.04);
   }}
   /* Wrap every Plotly chart in a clean white card. Card height EXACTLY equals
-     CHART_CARD_HEIGHT (which is CHART_INNER_HEIGHT + 10px buffer for padding
-     and border). Plotly renders at exactly CHART_INNER_HEIGHT — no autosize
-     drift, no whitespace inside, no clipping. Same value on every screen size. */
+     CHART_CARD_HEIGHT. Plotly renders at exactly CHART_INNER_HEIGHT inside.
+     Hard `overflow: hidden` on the card AND every nested Plotly element so
+     a scrollbar can never appear regardless of content. */
   div[data-testid="stPlotlyChart"] {{
     background: {SURFACE};
     border: 1px solid {BORDER};
@@ -383,7 +383,21 @@ st.markdown(
     margin: 0 0 4px 0 !important;
     height: {CHART_CARD_HEIGHT}px;
     box-sizing: border-box;
-    overflow: hidden;
+    overflow: hidden !important;
+  }}
+  /* Belt-and-braces: force every nested element inside a Plotly chart to
+     hide its overflow too, so even if Plotly tries to render content beyond
+     its configured height the user never sees a scrollbar. */
+  div[data-testid="stPlotlyChart"] > div,
+  div[data-testid="stPlotlyChart"] .js-plotly-plot,
+  div[data-testid="stPlotlyChart"] .plot-container,
+  div[data-testid="stPlotlyChart"] .svg-container,
+  div[data-testid="stPlotlyChart"] .user-select-none,
+  div[data-testid="stPlotlyChart"] .draglayer,
+  div[data-testid="stPlotlyChart"] .main-svg {{
+    overflow: hidden !important;
+    overflow-x: hidden !important;
+    overflow-y: hidden !important;
   }}
   /* Reset the inner wrapper so styles don't double-apply */
   div[data-testid="stPlotlyChart"] > div {{
@@ -884,11 +898,11 @@ with tab_home:
 
     # Charts grid (2×2)
     c1, c2 = st.columns(2)
-    with c1: st.plotly_chart(chart_time_of_day(), use_container_width=True, config={"displayModeBar": False})
-    with c2: st.plotly_chart(chart_speed(),       use_container_width=True, config={"displayModeBar": False})
+    with c1: st.plotly_chart(chart_time_of_day(), use_container_width=True, config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False, "staticPlot": False})
+    with c2: st.plotly_chart(chart_speed(),       use_container_width=True, config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False, "staticPlot": False})
     c3, c4 = st.columns(2)
-    with c3: st.plotly_chart(chart_year(),        use_container_width=True, config={"displayModeBar": False})
-    with c4: st.plotly_chart(chart_severity(),    use_container_width=True, config={"displayModeBar": False})
+    with c3: st.plotly_chart(chart_year(),        use_container_width=True, config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False, "staticPlot": False})
+    with c4: st.plotly_chart(chart_severity(),    use_container_width=True, config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False, "staticPlot": False})
 
     # Insight strip
     i1, i2, i3, i4 = st.columns(4)
