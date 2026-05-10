@@ -243,12 +243,25 @@ st.markdown(
     max-width: 1600px;
   }}
 
-  /* Hide ALL page-level scrollbars visually. Content still scrolls if it
-     overflows (mouse-wheel / trackpad still works), but no visible bar. */
+  /* ===== VIEWPORT LOCK — true app-like fixed-height layout =====
+     Page can't scroll vertically. Tab content fits inside the viewport.
+     Anything that would have overflowed scrolls inside its own panel. */
+  html, body {{
+    height: 100vh !important;
+    max-height: 100vh !important;
+    overflow: hidden !important;
+    margin: 0 !important;
+  }}
+  .stApp, [data-testid="stAppViewContainer"], section.main, .main {{
+    height: 100vh !important;
+    max-height: 100vh !important;
+    overflow: hidden !important;
+  }}
+  /* Hide any scrollbar that might appear on Streamlit's internal containers */
   html, body, .stApp, [data-testid="stAppViewContainer"],
   section.main, .main, [data-testid="ScrollToBottomContainer"] {{
-    scrollbar-width: none !important;     /* Firefox */
-    -ms-overflow-style: none !important;  /* IE / old Edge */
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
   }}
   html::-webkit-scrollbar,
   body::-webkit-scrollbar,
@@ -320,17 +333,28 @@ st.markdown(
     margin-top: 4px !important;
   }}
 
-  /* Tabs styling */
+  /* Tabs styling — flex-aware layout so the tab content area gets the
+     remaining viewport height after the sticky header + tab list. */
+  .stTabs {{
+    height: calc(100vh - 80px);   /* viewport minus header (64px) + small slack */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }}
   .stTabs [role="tablist"] {{
     gap: 0;
     border-bottom: 1px solid {BORDER};
-    /* Sticky tab nav — stays visible right below the header on scroll */
-    position: sticky;
-    top: 64px;
+    flex: 0 0 auto;               /* tab list keeps its natural height */
     background: {BG};
     z-index: 99;
     padding: 6px 0 0 0;
     margin: 0 !important;
+  }}
+  .stTabs [data-baseweb="tab-panel"] {{
+    flex: 1 1 auto;               /* tab content fills remaining space */
+    overflow: hidden;
+    min-height: 0;
+    padding-top: 8px !important;
   }}
   .stTabs [role="tab"] {{
     padding: 12px 18px; font-weight: 600; color: {FG_MUTED};
@@ -392,10 +416,10 @@ st.markdown(
     transform: translateY(-1px);
     box-shadow: 0 2px 6px rgba(17,24,39,0.08), 0 4px 12px rgba(17,24,39,0.04);
   }}
-  /* Wrap every Plotly chart in a clean white card. Card height EXACTLY equals
-     CHART_CARD_HEIGHT. Plotly renders at exactly CHART_INNER_HEIGHT inside.
-     Hard `overflow: hidden` on the card AND every nested Plotly element so
-     a scrollbar can never appear regardless of content. */
+  /* Wrap every Plotly chart in a clean white card. Card sizes to its Plotly
+     content (CHART_INNER_HEIGHT + padding). The min-height: 0 / min-width: 0
+     pair is the critical "let me shrink" trick that prevents grid items from
+     overflowing their parent. */
   div[data-testid="stPlotlyChart"] {{
     background: {SURFACE};
     border: 1px solid {BORDER};
@@ -403,13 +427,13 @@ st.markdown(
     padding: 4px 6px 2px 6px;
     box-shadow: 0 1px 2px rgba(17,24,39,0.04), 0 1px 4px rgba(17,24,39,0.03);
     margin: 0 0 4px 0 !important;
-    height: {CHART_CARD_HEIGHT}px;
     box-sizing: border-box;
     overflow: hidden !important;
+    min-height: 0 !important;
+    min-width: 0 !important;
   }}
-  /* Belt-and-braces: force every nested element inside a Plotly chart to
-     hide its overflow too, so even if Plotly tries to render content beyond
-     its configured height the user never sees a scrollbar. */
+  /* Belt-and-braces: every nested Plotly element forced to hide overflow,
+     so even if Plotly mis-renders, the user never sees a scrollbar. */
   div[data-testid="stPlotlyChart"] > div,
   div[data-testid="stPlotlyChart"] .js-plotly-plot,
   div[data-testid="stPlotlyChart"] .plot-container,
@@ -420,6 +444,27 @@ st.markdown(
     overflow: hidden !important;
     overflow-x: hidden !important;
     overflow-y: hidden !important;
+  }}
+  /* Column wrappers around chart cards: lock overflow + allow shrink.
+     min-height: 0 is the standard "let grid/flex children actually shrink"
+     trick — without it, content larger than its share forces the parent
+     to grow and reintroduces scrollbars. */
+  div[data-testid="column"]:has(div[data-testid="stPlotlyChart"]) {{
+    overflow: hidden !important;
+    min-height: 0 !important;
+    min-width: 0 !important;
+  }}
+  div[data-testid="column"]:has(div[data-testid="stPlotlyChart"])
+    > div[data-testid="stVerticalBlock"] {{
+    overflow: hidden !important;
+    min-height: 0 !important;
+    min-width: 0 !important;
+  }}
+  /* The horizontal block that holds the 2-column chart row also needs
+     min-height: 0 to participate cleanly in a fixed-height layout. */
+  div[data-testid="stHorizontalBlock"]:has(div[data-testid="stPlotlyChart"]) {{
+    min-height: 0 !important;
+    min-width: 0 !important;
   }}
   /* Reset the inner wrapper so styles don't double-apply */
   div[data-testid="stPlotlyChart"] > div {{
