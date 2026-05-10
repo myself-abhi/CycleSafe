@@ -343,15 +343,18 @@ def _h(key: str, fallback: int) -> int:
     return st.session_state.get("budget", {}).get(key, fallback)
 
 
-def gauge_chart(v: Verdict) -> go.Figure:
+def gauge_chart(v: Verdict) -> tuple[go.Figure, float, str]:
+    """Returns the gauge figure AND the score + color so the value can be
+    rendered as a separate Streamlit element below the chart. Avoids the
+    'gauge+number' overflow that clipped the number on narrow cards.
+    """
     if v.code == "INSUFFICIENT" or v.baseline == 0:
-        score, color = 0, MUTED
+        score, color = 0.0, MUTED
     else:
         score = float(min(100, (v.ksi_rate / v.baseline) * 50))
         color = v.color
     fig = go.Figure(go.Indicator(
-        mode="gauge+number", value=score,
-        number={"font": {"size": 36, "color": INK}, "valueformat": ".0f"},
+        mode="gauge", value=score,
         gauge={
             "axis": {"range": [0, 100], "tickwidth": 0,
                      "tickfont": {"size": 9, "color": MUTED}, "nticks": 5},
@@ -362,10 +365,10 @@ def gauge_chart(v: Verdict) -> go.Figure:
                 {"range": [50, 75], "color": AMBER_SOFT},
                 {"range": [75, 100], "color": RED_SOFT},
             ],
-        }, domain={"x": [0, 1], "y": [0, 1]},
+        }, domain={"x": [0.05, 0.95], "y": [0.1, 1]},
     ))
-    fig.update_layout(**base_layout(height=_h("gauge", 170), b=8, t=4, l=6, r=6))
-    return fig
+    fig.update_layout(**base_layout(height=_h("gauge", 130), b=4, t=4, l=4, r=4))
+    return fig, score, color
 
 
 def hour_curve(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: str) -> go.Figure:
@@ -724,6 +727,11 @@ def inject_css() -> None:
       line-height: 1.45; color: {BODY};
     }}
     .acs-check .icon {{ flex: 0 0 auto; font-size: 14px; line-height: 1.4; }}
+    .acs-gauge-value {{
+      text-align: center; font-size: 28px; font-weight: 700;
+      line-height: 1; margin: 2px 0 6px 0; letter-spacing: -0.01em;
+    }}
+    .acs-gauge-value .suffix {{ font-size: 13px; color: {MUTED}; font-weight: 500; }}
     .acs-tier {{
       text-align: center; font-size: 12px; color: {INK}; font-weight: 600;
       letter-spacing: 0.04em; text-transform: uppercase; margin-top: 2px;
@@ -819,16 +827,23 @@ def render_decision_band(slice_df: pd.DataFrame, all_df: pd.DataFrame) -> None:
         with st.container(border=True, height=DECISION_H):
             st.markdown('<div class="acs-tile-title">Risk gauge</div>',
                         unsafe_allow_html=True)
-            st.plotly_chart(gauge_chart(v), use_container_width=True,
+            gauge_fig, score, gauge_color = gauge_chart(v)
+            st.plotly_chart(gauge_fig, use_container_width=True,
                             config={"displayModeBar": False, "responsive": True})
+            # Render score as a separate styled element — guaranteed to fit
+            # the card width since it's plain text inside flex layout.
             if v.code == "INSUFFICIENT":
                 tier, delta_lbl = "Insufficient", f"{v.n} matching crashes"
+                score_disp = "—"
             else:
-                score = min(100, (v.ksi_rate / v.baseline) * 50) if v.baseline else 0
                 tier = "Low" if score < 50 else ("Elevated" if score < 75 else "High")
                 delta_lbl = f"{v.delta_pp:+.1f} pp vs baseline"
+                score_disp = f"{score:.0f}"
             st.markdown(
-                f'<div class="acs-tier">{tier}<span class="delta">{delta_lbl}</span></div>',
+                f'<div class="acs-gauge-value" style="color:{gauge_color};">{score_disp}'
+                f'<span class="suffix">/100</span></div>'
+                f'<div class="acs-tier">{tier}'
+                f'<span class="delta">{delta_lbl}</span></div>',
                 unsafe_allow_html=True)
     with c3:
         with st.container(border=True, height=DECISION_H):
