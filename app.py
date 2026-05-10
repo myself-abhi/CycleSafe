@@ -939,7 +939,8 @@ def render_decision_band(slice_df: pd.DataFrame, all_df: pd.DataFrame) -> None:
                         unsafe_allow_html=True)
             gauge_fig, score, gauge_color = gauge_chart(v)
             st.plotly_chart(gauge_fig, use_container_width=True,
-                            config={"displayModeBar": False, "responsive": True})
+                            config={"displayModeBar": False, "responsive": True},
+                            key="decision_gauge")
             # Render score as a separate styled element — guaranteed to fit
             # the card width since it's plain text inside flex layout.
             if v.code == "INSUFFICIENT":
@@ -1000,14 +1001,20 @@ def render_pattern_band(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: str
                 with col:
                     st.markdown(f'<div class="acs-tile-title">{title}</div>',
                                 unsafe_allow_html=True)
+                    # Unique key per tile so when slice is empty and every
+                    # fig is the structurally-identical empty_fig, Streamlit
+                    # doesn't collapse them into one and throw
+                    # StreamlitDuplicateElementId.
                     st.plotly_chart(fn(), use_container_width=True,
-                                    config={"displayModeBar": False, "responsive": True})
+                                    config={"displayModeBar": False, "responsive": True},
+                                    key=f"pattern_tile_{title}")
     with right:
         with st.container(border=True, height=PATTERN_H):
             st.markdown('<div class="acs-section">When risk peaks across the day</div>',
                         unsafe_allow_html=True)
             st.plotly_chart(hour_curve(slice_df, all_df, color), use_container_width=True,
-                            config={"displayModeBar": False, "responsive": True})
+                            config={"displayModeBar": False, "responsive": True},
+                            key="pattern_hour_curve")
             st.markdown(
                 '<div class="acs-caption">Dotted line is the citywide baseline. '
                 'Vertical rule marks the current local hour.</div>',
@@ -1027,19 +1034,22 @@ def render_drivers_strip(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: st
             st.markdown('<div class="acs-tile-title">Severity mix</div>',
                         unsafe_allow_html=True)
             st.plotly_chart(severity_bar(slice_df, color), use_container_width=True,
-                            config={"displayModeBar": False, "responsive": True})
+                            config={"displayModeBar": False, "responsive": True},
+                            key="drivers_severity")
     with cols[1]:
         with st.container(border=True, height=DRIVERS_H):
             st.markdown('<div class="acs-tile-title">Day × hour heatmap</div>',
                         unsafe_allow_html=True)
             st.plotly_chart(heatmap(slice_df, color), use_container_width=True,
-                            config={"displayModeBar": False, "responsive": True})
+                            config={"displayModeBar": False, "responsive": True},
+                            key="drivers_heatmap")
     with cols[2]:
         with st.container(border=True, height=DRIVERS_H):
             st.markdown('<div class="acs-tile-title">Roadway breakdown</div>',
                         unsafe_allow_html=True)
             st.plotly_chart(rd_fig, use_container_width=True,
-                            config={"displayModeBar": False, "responsive": True})
+                            config={"displayModeBar": False, "responsive": True},
+                            key="drivers_roadway")
             st.markdown(f'<div class="acs-caption">{rd_cap}</div>',
                         unsafe_allow_html=True)
     with cols[3]:
@@ -1049,13 +1059,15 @@ def render_drivers_strip(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: st
             d1, d2 = st.columns(2)
             with d1:
                 st.plotly_chart(don_helm, use_container_width=True,
-                                config={"displayModeBar": False, "responsive": True})
+                                config={"displayModeBar": False, "responsive": True},
+                                key="drivers_donut_helmet")
                 st.markdown(
                     '<div class="acs-caption" style="text-align:center;">Helmet not worn</div>',
                     unsafe_allow_html=True)
             with d2:
                 st.plotly_chart(don_traf, use_container_width=True,
-                                config={"displayModeBar": False, "responsive": True})
+                                config={"displayModeBar": False, "responsive": True},
+                                key="drivers_donut_traffic")
                 st.markdown(
                     '<div class="acs-caption" style="text-align:center;">High-traffic exposure</div>',
                     unsafe_allow_html=True)
