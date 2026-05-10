@@ -365,8 +365,12 @@ def empty_fig(height: int = 220, msg: str = "No data for this slice") -> go.Figu
     fig = go.Figure()
     fig.add_annotation(text=msg, x=0.5, y=0.5, xref="paper", yref="paper",
                        showarrow=False, font=dict(color=MUTED, size=11))
-    fig.update_layout(**base_layout(height=height),
-                      xaxis=dict(visible=False), yaxis=dict(visible=False))
+    # base_layout() already returns xaxis/yaxis; merge our hidden-axis flags
+    # into that single dict to avoid passing the kwarg twice (TypeError).
+    layout = base_layout(height=height)
+    layout["xaxis"] = dict(visible=False)
+    layout["yaxis"] = dict(visible=False)
+    fig.update_layout(**layout)
     return fig
 
 
