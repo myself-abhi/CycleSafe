@@ -63,6 +63,23 @@ SUCCESS_TINT = "#F0FDFA"     # very light teal tint behind safer banner
 DANGER_TINT = "#FEF2F2"      # background tint behind danger recommendations
 WARNING = PRIMARY            # alias kept so legacy refs don't break
 
+# ===== Single source of truth for ALL layout heights =====
+# Python and CSS both read from these constants. Change a value here and the
+# corresponding region resizes across the entire app — no drift, no gaps.
+#
+# Home tab — chart cards (4× in 2x2 grid)
+CHART_INNER_HEIGHT = 270    # Plotly figure pixel height
+CHART_CARD_HEIGHT = 280     # outer card pixel height (10px buffer)
+#
+# Plan tab — map iframe (responsive)
+PLAN_MAP_MIN_PX = 640       # floor on small laptops
+PLAN_MAP_IDEAL_VH = 80      # target % of viewport on typical desktops
+PLAN_MAP_MAX_PX = 900       # ceiling on 4K monitors
+#
+# Results tab — each ride card (map iframe + dark verdict panel)
+RIDE_CARD_HEIGHT = 320      # both map iframe and dark panel use this
+RIDE_CARD_IFRAME_BUFFER = 4 # extra pixels for components.html iframe overhead
+
 
 # ---------- GLOBAL CSS ----------
 st.markdown(
@@ -226,11 +243,10 @@ st.markdown(
   div[data-testid="stVerticalBlock"] {{ gap: 0.55rem !important; }}
   div[data-testid="stHorizontalBlock"] {{ gap: 0.6rem !important; }}
 
-  /* Responsive map height — fills the Plan tab vertical space.
-     Now that the action bar sits OUTSIDE the map column (full-width below
-     both columns), the map can grow to fill the right column entirely. */
+  /* Responsive map height — fills the Plan tab vertical space. Reads from
+     the PLAN_MAP_* design tokens so any height change happens in one place. */
   iframe[title^="streamlit_folium"] {{
-    height: clamp(640px, 80vh, 900px) !important;
+    height: clamp({PLAN_MAP_MIN_PX}px, {PLAN_MAP_IDEAL_VH}vh, {PLAN_MAP_MAX_PX}px) !important;
     margin-bottom: 0 !important;
     display: block;
   }}
@@ -309,24 +325,17 @@ st.markdown(
     transform: translateY(-1px);
     box-shadow: 0 2px 6px rgba(17,24,39,0.08), 0 4px 12px rgba(17,24,39,0.04);
   }}
-  /* Wrap every Plotly chart in a clean white card. Responsive height —
-     grows on tall monitors, stays compact on laptops. clamp() floor at
-     250px (laptop), ideal at 30% of viewport, ceiling 360px (4K). */
+  /* Wrap every Plotly chart in a clean white card. Card height locked to
+     CHART_CARD_HEIGHT (Python) — same value referenced everywhere. */
   div[data-testid="stPlotlyChart"] {{
     background: {SURFACE};
     border: 1px solid {BORDER};
     border-radius: 10px;
     padding: 4px 6px 2px 6px;
     box-shadow: 0 1px 2px rgba(17,24,39,0.04), 0 1px 4px rgba(17,24,39,0.03);
-    margin-bottom: 8px;
-    height: clamp(250px, 30vh, 360px);
+    margin: 0 0 4px 0 !important;
+    height: {CHART_CARD_HEIGHT}px;
     box-sizing: border-box;
-  }}
-  /* Inner Plotly element fills the responsive card */
-  div[data-testid="stPlotlyChart"] > div,
-  div[data-testid="stPlotlyChart"] .js-plotly-plot,
-  div[data-testid="stPlotlyChart"] .plot-container {{
-    height: 100% !important; width: 100% !important;
   }}
   /* Reset the inner wrapper so styles don't double-apply */
   div[data-testid="stPlotlyChart"] > div {{
@@ -633,26 +642,21 @@ def _baseline_shape(baseline_pct: float, x0=0, x1=1, axis="y"):
     )
 
 
-def _chart_layout(title: str, height: int | None = None) -> dict:
-    """Uniform chart layout. Plotly autosizes to fit the responsive card,
-    so charts grow on tall monitors and stay compact on laptops.
+def _chart_layout(title: str, height: int = CHART_INNER_HEIGHT) -> dict:
+    """Uniform chart layout. Fixed height matches the CSS card height exactly,
+    so there's never internal whitespace inside the card or gap between rows.
+    autosize=False so Plotly renders at exactly the height we specify.
     """
-    layout = dict(
+    return dict(
         title=dict(text=title, font=dict(size=12, color=FG, family="Inter"),
                    x=0, xanchor="left", y=0.985, yanchor="top",
                    pad=dict(t=0, b=0)),
-        # Tightened margins keep the plot area maximised — title stays
-        # readable, axis labels never clip, no dead whitespace at edges.
         margin=dict(l=42, r=18, t=24, b=40),
         paper_bgcolor=SURFACE, plot_bgcolor=SURFACE,
-        autosize=True, showlegend=False,
+        height=height, autosize=False, showlegend=False,
         font=dict(family="Inter", size=9, color=FG_MUTED),
         hoverlabel=dict(bgcolor=FG, font=dict(color="white", family="Inter")),
     )
-    if height is not None:
-        layout["height"] = height
-        layout["autosize"] = False
-    return layout
 
 
 # NOTE: @st.cache_data was removed from these chart functions because the
@@ -1166,8 +1170,9 @@ with tab_plan:
                     [min(lats) - lat_pad, min(lngs) - lng_pad],
                     [max(lats) + lat_pad, max(lngs) + lng_pad],
                 ])
-        # Height is overridden by the iframe CSS rule above (clamp 520-760px)
-        out = st_folium(m, height=600, width=None,
+        # Height is overridden by CSS clamp(PLAN_MAP_MIN, PLAN_MAP_IDEAL, PLAN_MAP_MAX);
+        # passing min as a sane fallback before the CSS rule kicks in.
+        out = st_folium(m, height=PLAN_MAP_MIN_PX, width=None,
                         returned_objects=["last_active_drawing"], key="plan_map",
                         use_container_width=True)
         if out and out.get("last_active_drawing"):
@@ -1289,7 +1294,7 @@ def _render_ride_card(title: str, geojson: dict | None, meters: float, risk: dic
             start = ll[0]; end = ll[-1]
             map_id = ("m_" + "".join(ch for ch in title if ch.isalnum())
                       + str(abs(hash(ll_json)) % 100000))
-            map_height = 320
+            map_height = RIDE_CARD_HEIGHT  # single source of truth — see design tokens
             # Compute padded bounds + a max-zoom cap in Python so the JS doesn't
             # get to "decide" — we tell it exactly what view to set.
             lats = [p[0] for p in ll]; lngs = [p[1] for p in ll]
@@ -1357,7 +1362,7 @@ def _render_ride_card(title: str, geojson: dict | None, meters: float, risk: dic
               }})();
             </script>
             """
-            components.html(html, height=map_height + 4)
+            components.html(html, height=map_height + RIDE_CARD_IFRAME_BUFFER)
         else:
             st.info("No route drawn for this ride yet.")
     with sum_col:
@@ -1375,13 +1380,14 @@ def _render_ride_card(title: str, geojson: dict | None, meters: float, risk: dic
                           .replace(">", "&gt;"))
         modal_id = f"jm-{abs(hash(title + ride_json)) % 1000000}"
 
-        # Single cohesive dark panel — fills the full map height (320px) so the
-        # right side aligns flush with the map on the left. The { } JSON button
-        # sits absolutely positioned in the bottom-right corner.
+        # Single cohesive dark panel — fills the full map height (RIDE_CARD_HEIGHT)
+        # so the right side aligns flush with the map on the left. The { } JSON
+        # button sits absolutely positioned in the bottom-right corner.
         st.markdown(
             f"""
             <div class="acs-hero" style="padding: 1.1rem 1.3rem;
-                                          height: 320px; border-radius: 0 0 8px 0;
+                                          height: {RIDE_CARD_HEIGHT}px;
+                                          border-radius: 0 0 8px 0;
                                           margin: 0; box-shadow: none;
                                           display: flex; flex-direction: column;
                                           justify-content: space-between; gap: 0.8rem;
