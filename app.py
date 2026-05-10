@@ -42,27 +42,25 @@ st.set_page_config(
 
 
 # ---------- DESIGN TOKENS — Modern Minimal palette ----------
-# Hard rule: only THREE accent colors — teal (brand), green (safer), red (risk).
-# Everything else (BG/SURFACE/FG/FG_MUTED/BORDER) is grayscale neutrals — they
-# don't count as "colors" any more than black-and-white type does.
-PRIMARY = "#0F766E"          # teal — brand, headings, route line
-PRIMARY_HOVER = "#115E59"
-PRIMARY_SOFT = "#F0FDFA"
+# Two accent colors only: TEAL (brand + safer + buttons) and RED (risk).
+# Everything else is grayscale neutrals. SUCCESS is aliased to PRIMARY so
+# every "good / below baseline" indicator uses the same teal as the brand.
+PRIMARY = "#0F766E"          # teal — brand, buttons, headings, route line
+PRIMARY_HOVER = "#115E59"    # darker teal for hover states
+PRIMARY_SOFT = "#F0FDFA"     # very light teal tint for soft backgrounds
 BG = "#FAFAF9"               # warm off-white canvas
 SURFACE = "#FFFFFF"
 FG = "#111827"
 FG_MUTED = "#4B5563"
 BORDER = "#E5E7EB"
-SUCCESS = "#16A34A"          # below baseline / safer  (Tailwind green-600)
-DANGER = "#DC2626"           # above baseline / risk    (Tailwind red-600)
-# Soft (10% alpha) variants of the same colors — used for chart fills and
-# tinted backgrounds. Derived from the hex values above so visual identity
-# is guaranteed.
-SUCCESS_SOFT = "rgba(22,163,74,0.10)"   # #16A34A at 10% alpha
-DANGER_SOFT = "rgba(220,38,38,0.10)"    # #DC2626 at 10% alpha
-SUCCESS_TINT = "#F0FDF4"     # background tint behind calm recommendations
+SUCCESS = PRIMARY            # safer / below baseline → same teal as brand
+DANGER = "#DC2626"           # above baseline / risk  (Tailwind red-600)
+# Soft (10% alpha) variants — derived from the main accents so they always
+# match. SUCCESS shares teal with PRIMARY, so SUCCESS_* tints share teal too.
+SUCCESS_SOFT = "rgba(15,118,110,0.10)"  # #0F766E at 10% alpha (teal)
+DANGER_SOFT = "rgba(220,38,38,0.10)"    # #DC2626 at 10% alpha (red)
+SUCCESS_TINT = "#F0FDFA"     # PRIMARY_SOFT — light teal tint behind safer
 DANGER_TINT = "#FEF2F2"      # background tint behind danger recommendations
-# WARNING removed — "caution" now uses PRIMARY (teal). Three colors only.
 WARNING = PRIMARY            # alias kept so legacy refs don't break
 
 
@@ -237,19 +235,19 @@ st.markdown(
   }}
   .stTabs [aria-selected="true"] {{ color: {FG}; border-bottom-color: {PRIMARY}; }}
 
-  /* Buttons — unified GREEN background across Streamlit + download buttons */
+  /* Buttons — unified TEAL background across Streamlit + download buttons */
   .stButton > button,
   .stDownloadButton > button {{
-    background: {SUCCESS} !important; color: white !important;
-    border: 1px solid {SUCCESS} !important;
+    background: {PRIMARY} !important; color: white !important;
+    border: 1px solid {PRIMARY} !important;
     font-weight: 600 !important; border-radius: 6px !important;
     height: 40px !important;
     transition: background 140ms ease !important;
   }}
   .stButton > button:hover:not(:disabled),
   .stDownloadButton > button:hover:not(:disabled) {{
-    background: #15803D !important;  /* darker green-700 on hover */
-    border-color: #15803D !important;
+    background: {PRIMARY_HOVER} !important;
+    border-color: {PRIMARY_HOVER} !important;
   }}
   .stButton > button:disabled,
   .stDownloadButton > button:disabled {{
@@ -816,15 +814,15 @@ with tab_home:
             font-size: 0.72rem; margin-right: 6px;
           }}
           button.acs-cta-primary {{
-            background: {SUCCESS} !important; color: white !important;
-            border: 1px solid {SUCCESS} !important;
+            background: {PRIMARY} !important; color: white !important;
+            border: 1px solid {PRIMARY} !important;
             font-weight: 600 !important; height: 40px !important;
             padding: 0 18px !important;
             border-radius: 6px !important; cursor: pointer !important;
             font-family: Inter, sans-serif !important; font-size: 0.92rem !important;
             transition: background 140ms ease !important;
           }}
-          button.acs-cta-primary:hover {{ background: #15803D !important; }}
+          button.acs-cta-primary:hover {{ background: {PRIMARY_HOVER} !important; }}
         </style>
         <div class="acs-cta-row">
           <div class="next-text">
@@ -1182,14 +1180,14 @@ with tab_plan:
                 <html><body style="margin:0;padding:0;">
                 <button id="view-results-jump-plan"
                         style="width:100%; height: 40px; padding: 0 12px;
-                               background: {SUCCESS}; color: white;
-                               border: 1px solid {SUCCESS}; border-radius: 6px;
+                               background: {PRIMARY}; color: white;
+                               border: 1px solid {PRIMARY}; border-radius: 6px;
                                font-weight: 600; font-family: Inter, sans-serif;
                                font-size: 0.92rem; cursor: pointer;
                                white-space: nowrap;
                                transition: background 140ms ease;"
-                        onmouseover="this.style.background='#15803D';"
-                        onmouseout="this.style.background='{SUCCESS}';">
+                        onmouseover="this.style.background='{PRIMARY_HOVER}';"
+                        onmouseout="this.style.background='{PRIMARY}';">
                   {view_label}
                 </button>
                 <script>
