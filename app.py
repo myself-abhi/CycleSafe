@@ -187,6 +187,18 @@ st.markdown(
   .stApp > header {{ display: none !important; }}
   .viewerBadge_container__1QSob {{ display: none !important; }}
   ._terminalButton_rix23_138 {{ display: none !important; }}
+  /* Streamlit Cloud "page name" pill — multiple class hashes seen in the wild */
+  [class*="viewerBadge"], [class*="ViewerBadge"] {{ display: none !important; }}
+  [class*="terminalButton"] {{ display: none !important; }}
+  [class*="manageAppButton"] {{ display: none !important; }}
+  [data-testid="stPageNav"] {{ display: none !important; }}
+  [data-testid="stToolbarActions"] {{ display: none !important; }}
+  /* Streamlit Cloud "Manage app" pill at bottom-right + page-name badge */
+  iframe[title="streamlitApp"] {{ display: none !important; }}
+  div[data-testid="stAppDeployButton"] {{ display: none !important; }}
+  /* The page-name badge specifically — it's the only Streamlit element
+     positioned with high z-index above the header */
+  body > div:not([data-testid]):not([data-stale]):not([class]):not([id]):empty {{ display: none !important; }}
   /* Tighten outer padding so the layout breathes like the HTML preview */
   .block-container {{ padding-top: 0.6rem !important; padding-left: 1.2rem !important; padding-right: 1.2rem !important; }}
 
@@ -834,13 +846,15 @@ with tab_plan:
             st.markdown(
                 f"""
                 <div class="acs-mini-help">
-                  <b style="color: {PRIMARY_HOVER};">Freehand drawing.</b>
-                  What you draw is the route. Distance is measured along the exact line
-                  you put on the map — no auto-correct, no surprises. Use the map's
-                  toolbar (top-left) to start a polyline.<br><br>
-                  The <b>Street type</b> setting in 01 Conditions is what drives the
-                  risk calculation. Pick the road class that matches what you're drawing
-                  along — calm street, arterial, or high-speed road.
+                  <b style="color: {PRIMARY_HOVER};">How to draw a route.</b><br>
+                  1. Click the <b>polyline icon</b> (top-left of the map).<br>
+                  2. <b>Click</b> on the map to place each point along your route.<br>
+                  3. <b>Double-click the last point</b> (or click <i>Finish</i> in the
+                     drawing toolbar) to end the line.<br>
+                  4. To close a loop, place your final point near the start, then double-click.<br><br>
+                  Distance is measured along the exact line you draw — no auto-correct.
+                  The <b>Street type</b> setting in <b>01 Conditions</b> is what drives the
+                  risk math; pick the road class that matches what you're drawing along.
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -929,6 +943,17 @@ with tab_plan:
                          key="btn_clear_route"):
                 st.session_state.drawn_route = None
                 st.rerun()
+            saved_n = len(st.session_state.saved_rides)
+            view_label = (f"📊 View results ({saved_n} saved) →"
+                          if saved_n else "📊 View results →")
+            st.markdown(
+                f"<div style='font-size: 0.78rem; color: {FG_MUTED}; "
+                f"margin-top: 0.4rem; line-height: 1.45;'>"
+                f"Click the <b>03 · Results</b> tab at the top to compare every "
+                f"saved ride side-by-side with its risk score and route map."
+                f"</div>",
+                unsafe_allow_html=True,
+            )
 
     # =========================================================
     # Map column — fills the right 2/3 of the viewport
@@ -1004,13 +1029,30 @@ def _render_ride_card(title: str, geojson: dict | None, meters: float, risk: dic
         coords = geojson.get("geometry", {}).get("coordinates", []) if geojson else []
         if coords:
             lats = [c[1] for c in coords]; lngs = [c[0] for c in coords]
-            center = [(min(lats) + max(lats)) / 2, (min(lngs) + max(lngs)) / 2]
-            m = folium.Map(location=center, zoom_start=15, tiles="OpenStreetMap",
+            # Build the map with NO initial zoom_start — that way fit_bounds is the
+            # only thing setting the view, and Leaflet picks the right zoom for the
+            # bounding box automatically.
+            sw = [min(lats), min(lngs)]; ne = [max(lats), max(lngs)]
+            # Pad the box slightly so the polyline isn't flush against the map edge.
+            lat_pad = max((max(lats) - min(lats)) * 0.10, 0.0008)
+            lng_pad = max((max(lngs) - min(lngs)) * 0.10, 0.0008)
+            sw_p = [sw[0] - lat_pad, sw[1] - lng_pad]
+            ne_p = [ne[0] + lat_pad, ne[1] + lng_pad]
+            m = folium.Map(tiles="OpenStreetMap",
                            zoom_control=True, scrollWheelZoom=False)
             folium.PolyLine([[c[1], c[0]] for c in coords],
                             color=PRIMARY, weight=5, opacity=0.95).add_to(m)
-            m.fit_bounds([[min(lats), min(lngs)], [max(lats), max(lngs)]], padding=(20, 20))
-            st_folium(m, height=300, width=None, returned_objects=[],
+            # Mark start (green) and end (red) so the user knows direction.
+            folium.CircleMarker([coords[0][1], coords[0][0]], radius=6,
+                                color="white", weight=2, fill=True,
+                                fill_color=SUCCESS, fill_opacity=1.0,
+                                tooltip="Start").add_to(m)
+            folium.CircleMarker([coords[-1][1], coords[-1][0]], radius=6,
+                                color="white", weight=2, fill=True,
+                                fill_color=DANGER, fill_opacity=1.0,
+                                tooltip="End").add_to(m)
+            m.fit_bounds([sw_p, ne_p])
+            st_folium(m, height=320, width=None, returned_objects=[],
                       key=f"results_map_{title}")
         else:
             st.info("No route drawn for this ride yet.")
