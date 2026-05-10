@@ -10,7 +10,9 @@ indicator is the rate at which historical crashes turned serious (Killed
 or Incapacitating Injury — "KSI"), compared against the citywide baseline.
 
 Three colors only:  Charcoal #1E1E1E  ·  Safety Teal #2ECC71  ·  Pure White
-Four panels, no vertical scroll on a 14" laptop, single column on mobile.
+The page stays on the white/teal palette always; only the verdict panel
+itself flips charcoal-on-white when conditions exceed the baseline.
+Four panels: 2x2 on laptop, single column on mobile.
 """
 
 from pathlib import Path
@@ -36,6 +38,8 @@ st.set_page_config(
 CHARCOAL = "#1E1E1E"
 TEAL = "#2ECC71"
 WHITE = "#FFFFFF"
+RED = "#E63946"   # used only for the DANGER verdict panel
+PAGE_BG = "#FAFAFA"
 LINE = "#ECECEC"
 MUTED = "#6B6B6B"
 
@@ -45,21 +49,12 @@ DATA_PATH = Path(__file__).parent / "bike_crash.csv"
 
 
 # ---------------------------------------------------------------------
-# CSS  —  three-color system, responsive 4-panel grid, footer kill
-# Panels are styled by targeting Streamlit's bordered-container DOM,
-# not by manual <div> wrappers (those don't nest the way you'd expect
-# in Streamlit — children land outside the parent).
+# CSS — single payload, white/teal palette throughout.
+# Only the verdict panel flips charcoal when DANGER; everything else
+# stays white. The flip is driven by a class on the verdict's inner div,
+# which the panel container picks up via :has().
 # ---------------------------------------------------------------------
-def inject_css(mode: str) -> None:
-    is_danger = (mode == "danger")
-    page_bg = CHARCOAL if is_danger else "#FAFAFA"
-    page_fg = WHITE if is_danger else CHARCOAL
-    panel_bg = "#262626" if is_danger else WHITE
-    panel_border = "#333" if is_danger else LINE
-    muted_color = "#9B9B9B" if is_danger else MUTED
-    accent = WHITE if is_danger else TEAL
-    inner_bg = "#1E1E1E" if is_danger else "#FAFAFA"
-
+def inject_css() -> None:
     css = f"""
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
@@ -70,26 +65,38 @@ def inject_css(mode: str) -> None:
       [data-testid="stStatusWidget"] {{ display: none !important; }}
       .stDeployButton {{ display: none !important; }}
 
-      /* ============== PAGE SURFACE ============== */
+      /* ============== PAGE SURFACE — always light, fills viewport ============== */
       html, body, .stApp {{
-        background: {page_bg} !important;
-        color: {page_fg};
+        background: {PAGE_BG} !important;
+        color: {CHARCOAL};
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        transition: background 220ms ease, color 220ms ease;
+        height: 100vh;
+        overflow: hidden;
       }}
-
-      /* Fluid container — padding scales with viewport */
       .block-container {{
-        padding: clamp(0.5rem, 1.2vw, 1rem) clamp(0.75rem, 2vw, 1.75rem) 1rem !important;
+        padding: clamp(0.5rem, 1.2vw, 0.9rem) clamp(0.75rem, 2vw, 1.75rem) 0.75rem !important;
         max-width: 1600px !important;
         margin: 0 auto !important;
+        height: 100vh !important;
+        max-height: 100vh !important;
+        display: flex !important;
+        flex-direction: column !important;
+        overflow: hidden !important;
+      }}
+      /* Streamlit's outermost vertical block stretches to fill the container */
+      .block-container > [data-testid="stVerticalBlock"] {{
+        flex: 1 1 auto;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        gap: 0.55rem !important;
       }}
 
       /* ============== BRAND BAR ============== */
       .brand-row {{
         display: flex; align-items: center; gap: 0.7rem;
         padding: 0.2rem 0 0.65rem 0;
-        border-bottom: 1px solid {panel_border};
+        border-bottom: 1px solid {LINE};
         margin-bottom: 0.7rem;
         flex-wrap: wrap;
       }}
@@ -97,36 +104,32 @@ def inject_css(mode: str) -> None:
         width: clamp(28px, 3vw, 34px);
         height: clamp(28px, 3vw, 34px);
         border-radius: 8px;
-        background: {accent};
-        color: {CHARCOAL if is_danger else WHITE};   /* SVG stroke inherits via currentColor */
+        background: {TEAL};
+        color: {WHITE};
         display: flex; align-items: center; justify-content: center;
         flex-shrink: 0;
       }}
       .brand-icon svg {{ width: 60%; height: 60%; stroke: currentColor !important; }}
       .brand-name {{
-        color: {page_fg};
+        color: {CHARCOAL};
         font-weight: 800;
         font-size: clamp(0.95rem, 1.2vw, 1.1rem);
         letter-spacing: -0.02em;
       }}
       .brand-tag {{
-        color: {muted_color};
+        color: {MUTED};
         font-size: clamp(0.7rem, 0.85vw, 0.8rem);
         margin-left: auto;
         letter-spacing: 0.02em;
       }}
-      @media (max-width: 920px) {{
-        .brand-tag {{ display: none; }}
-      }}
+      @media (max-width: 920px) {{ .brand-tag {{ display: none; }} }}
 
-      /* ============== FILTER STRIP — wraps at narrow widths ============== */
-      /* Streamlit's column row */
+      /* ============== FILTER STRIP — wraps gracefully ============== */
       [data-testid="stHorizontalBlock"] {{
         flex-wrap: wrap !important;
         gap: 0.6rem !important;
         row-gap: 0.6rem !important;
       }}
-      /* Each filter column gets a sensible min-width so 5 cols don't squish */
       [data-testid="stHorizontalBlock"] > [data-testid="column"],
       [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {{
         min-width: 0;
@@ -134,99 +137,193 @@ def inject_css(mode: str) -> None:
       }}
       .stSelectbox label {{
         font-size: 0.68rem !important;
-        color: {muted_color} !important;
+        color: {MUTED} !important;
         text-transform: uppercase;
         letter-spacing: 0.1em;
         font-weight: 600 !important;
       }}
       .stSelectbox > div > div {{
-        background: {panel_bg} !important;
-        border: 1px solid {panel_border} !important;
+        background: {WHITE} !important;
+        border: 1px solid {LINE} !important;
         border-radius: 8px !important;
-        color: {page_fg} !important;
+        color: {CHARCOAL} !important;
       }}
-      .stSelectbox div[data-baseweb="select"] > div {{
-        color: {page_fg} !important;
-      }}
+      .stSelectbox div[data-baseweb="select"] > div {{ color: {CHARCOAL} !important; }}
 
-      /* ============== PANELS ============== */
-      /* Streamlit's bordered container is the panel surface.
-         Children inside this wrapper actually nest properly. */
+      /* ============== PANELS — all white by default ============== */
       [data-testid="stVerticalBlockBorderWrapper"] {{
-        background: {panel_bg} !important;
-        border: 1px solid {panel_border} !important;
+        background: {WHITE} !important;
+        border: 1px solid {LINE} !important;
         border-radius: 14px !important;
-        padding: clamp(0.85rem, 1.4vw, 1.2rem) clamp(0.95rem, 1.6vw, 1.35rem) !important;
+        padding: clamp(0.75rem, 1.2vw, 1.1rem) clamp(0.9rem, 1.5vw, 1.3rem) !important;
         height: 100%;
-        transition: background 220ms ease, border-color 220ms ease;
+        transition: background 220ms ease, border-color 220ms ease, color 220ms ease;
       }}
 
-      /* Panel row spacing */
-      [data-testid="stHorizontalBlock"]:has([data-testid="stVerticalBlockBorderWrapper"]) {{
-        margin-bottom: 0.8rem;
+      /* ============== EQUAL-HEIGHT 4-PANEL GRID (≥ 901px) ============== */
+      /* Two panel rows split remaining space evenly. Each panel fills
+         its column. If content overflows, the panel scrolls internally
+         so the grid still fits the page. */
+      @media (min-width: 901px) {{
+        /* Filter row stays compact */
+        [data-testid="stHorizontalBlock"]:not(:has([data-testid="stVerticalBlockBorderWrapper"])) {{
+          flex: 0 0 auto !important;
+        }}
+
+        /* Each panel row gets an equal share of the leftover vertical space */
+        [data-testid="stHorizontalBlock"]:has([data-testid="stVerticalBlockBorderWrapper"]) {{
+          flex: 1 1 0 !important;
+          min-height: 0 !important;
+          margin-bottom: 0 !important;
+          align-items: stretch !important;
+        }}
+
+        /* Columns inside a panel row stretch full height */
+        [data-testid="stHorizontalBlock"]:has([data-testid="stVerticalBlockBorderWrapper"])
+          > [data-testid="column"],
+        [data-testid="stHorizontalBlock"]:has([data-testid="stVerticalBlockBorderWrapper"])
+          > [data-testid="stColumn"] {{
+          display: flex !important;
+          flex-direction: column !important;
+          min-height: 0 !important;
+        }}
+
+        /* Vertical block inside each column also stretches */
+        [data-testid="stHorizontalBlock"]:has([data-testid="stVerticalBlockBorderWrapper"])
+          [data-testid="stVerticalBlock"] {{
+          flex: 1 1 auto !important;
+          min-height: 0 !important;
+          height: 100% !important;
+        }}
+
+        /* The bordered panel itself — fills its cell, content must fit (no scroll) */
+        [data-testid="stHorizontalBlock"]:has([data-testid="stVerticalBlockBorderWrapper"])
+          [data-testid="stVerticalBlockBorderWrapper"] {{
+          flex: 1 1 auto !important;
+          height: 100% !important;
+          min-height: 0 !important;
+          overflow: hidden !important;
+          display: flex !important;
+          flex-direction: column !important;
+        }}
+
+        /* Inner vertical block of the panel also flexes */
+        [data-testid="stVerticalBlockBorderWrapper"] > [data-testid="stVerticalBlock"] {{
+          flex: 1 1 auto !important;
+          min-height: 0 !important;
+          display: flex !important;
+          flex-direction: column !important;
+          gap: 0.45rem !important;
+        }}
+
+        /* Charts shrink to fit available cell height */
+        [data-testid="stAltairChart"] {{
+          flex: 1 1 auto;
+          min-height: 0;
+          overflow: hidden;
+        }}
+        .vega-embed, .vega-embed > div {{ height: 100% !important; }}
+        .vega-embed canvas, .vega-embed svg {{
+          max-height: 100% !important;
+          height: auto !important;
+        }}
+      }}
+
+      /* On mobile (≤ 900px) we drop the fit-to-screen lock so users can scroll naturally */
+      @media (max-width: 900px) {{
+        html, body, .stApp {{ height: auto; overflow: auto; }}
+        .block-container {{
+          height: auto !important;
+          max-height: none !important;
+          overflow: visible !important;
+        }}
+        [data-testid="stHorizontalBlock"]:has([data-testid="stVerticalBlockBorderWrapper"]) {{
+          margin-bottom: 0.6rem !important;
+        }}
       }}
 
       /* Panel section header */
       .sec-h {{
-        font-size: clamp(0.68rem, 0.85vw, 0.76rem);
+        font-size: clamp(0.66rem, 0.82vw, 0.74rem);
         text-transform: uppercase;
         letter-spacing: 0.14em;
-        color: {muted_color};
-        margin: 0 0 0.85rem 0;
+        color: {MUTED};
+        margin: 0 0 0.55rem 0;
         font-weight: 700;
+        flex-shrink: 0;
       }}
 
-      /* Verdict accent bar — :has() identifies the verdict panel */
-      [data-testid="stVerticalBlockBorderWrapper"]:has(.verdict-headline) {{
+      /* ============== VERDICT PANEL — accent strip on top ============== */
+      [data-testid="stVerticalBlockBorderWrapper"]:has(.verdict-content) {{
         position: relative;
         overflow: hidden;
       }}
-      [data-testid="stVerticalBlockBorderWrapper"]:has(.verdict-headline)::before {{
+
+      /* Top accent strip — color depends on mode */
+      [data-testid="stVerticalBlockBorderWrapper"]:has(.verdict-content)::before {{
         content: '';
         position: absolute;
         top: 0; left: 0; right: 0;
         height: 4px;
-        background: {accent};
+        background: {TEAL};
+      }}
+      [data-testid="stVerticalBlockBorderWrapper"]:has(.mode-danger.verdict-content)::before {{
+        background: {WHITE};
+      }}
+      [data-testid="stVerticalBlockBorderWrapper"]:has(.mode-unknown.verdict-content)::before {{
+        background: {CHARCOAL};
       }}
 
-      /* ============== VERDICT PANEL CONTENT ============== */
+      /* DANGER: only the verdict panel turns red — page stays white */
+      [data-testid="stVerticalBlockBorderWrapper"]:has(.mode-danger.verdict-content) {{
+        background: {RED} !important;
+        border-color: {RED} !important;
+        color: {WHITE};
+      }}
+
+      /* ============== VERDICT CONTENT ============== */
       .verdict-mode {{
         display: inline-block;
-        font-size: clamp(0.65rem, 0.8vw, 0.72rem);
+        font-size: clamp(0.62rem, 0.78vw, 0.7rem);
         letter-spacing: 0.2em;
         font-weight: 700;
         text-transform: uppercase;
-        padding: 0.3rem 0.7rem;
+        padding: 0.25rem 0.65rem;
         border-radius: 999px;
-        margin-bottom: 0.85rem;
+        margin-bottom: 0.55rem;
       }}
-      .mode-safe .verdict-mode {{ background: {TEAL}; color: {WHITE}; }}
-      .mode-danger .verdict-mode {{ background: {WHITE}; color: {CHARCOAL}; }}
+      .mode-safe .verdict-mode    {{ background: {TEAL};     color: {WHITE}; }}
+      .mode-danger .verdict-mode  {{ background: {WHITE};    color: {RED}; }}
       .mode-unknown .verdict-mode {{ background: {CHARCOAL}; color: {WHITE}; }}
 
       .verdict-headline {{
-        font-size: clamp(1.45rem, 2.6vw, 2.3rem);
+        font-size: clamp(1.3rem, 2.3vw, 2rem);
         line-height: 1.1;
-        margin: 0 0 0.5rem 0;
+        margin: 0 0 0.4rem 0;
         letter-spacing: -0.025em;
         font-weight: 800;
-        color: {page_fg};
+        color: {CHARCOAL};
       }}
-      .verdict-sub {{
-        font-size: clamp(0.85rem, 1vw, 0.95rem);
-        color: {muted_color};
-        margin: 0 0 1rem 0;
-        line-height: 1.5;
-      }}
+      .mode-danger .verdict-headline {{ color: {WHITE}; }}
 
-      /* Verdict numbers — fluid grid, drops columns gracefully */
+      .verdict-sub {{
+        font-size: clamp(0.82rem, 0.95vw, 0.92rem);
+        color: {MUTED};
+        margin: 0 0 0.75rem 0;
+        line-height: 1.45;
+      }}
+      /* On red bg, soften white slightly for the supporting copy */
+      .mode-danger .verdict-sub {{ color: rgba(255,255,255,0.88); }}
+
       .verdict-numbers {{
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
-        gap: 0.85rem;
-        padding-top: 0.85rem;
-        border-top: 1px solid {panel_border};
+        grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+        gap: 0.7rem;
+        padding-top: 0.6rem;
+        border-top: 1px solid {LINE};
+        margin-top: auto;  /* push to bottom of verdict panel */
       }}
+      .mode-danger .verdict-numbers {{ border-top-color: rgba(255,255,255,0.25); }}
       .verdict-numbers .cell {{
         display: flex; flex-direction: column; gap: 0.15rem;
         min-width: 0;
@@ -234,100 +331,92 @@ def inject_css(mode: str) -> None:
       .verdict-numbers .num {{
         font-size: clamp(1.1rem, 1.7vw, 1.5rem);
         font-weight: 800;
-        color: {page_fg};
+        color: {CHARCOAL};
         letter-spacing: -0.02em;
         line-height: 1.1;
       }}
+      .mode-danger .verdict-numbers .num {{ color: {WHITE}; }}
       .verdict-numbers .lbl {{
         font-size: clamp(0.62rem, 0.75vw, 0.7rem);
-        color: {muted_color};
+        color: {MUTED};
         text-transform: uppercase;
         letter-spacing: 0.1em;
       }}
+      .mode-danger .verdict-numbers .lbl {{ color: rgba(255,255,255,0.75); }}
 
-      /* ============== METRIC CARDS ============== */
+      /* ============== METRIC CARDS (selection panel) ============== */
       .metric-block {{
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
-        gap: 0.65rem;
-        margin-bottom: 0.85rem;
+        grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+        gap: 0.5rem;
+        margin-bottom: 0.55rem;
+        flex-shrink: 0;
       }}
       .metric-card {{
-        background: {inner_bg};
+        background: {PAGE_BG};
         border-radius: 10px;
-        padding: clamp(0.5rem, 0.9vw, 0.75rem) clamp(0.6rem, 1vw, 0.9rem);
-        border: 1px solid {panel_border};
+        padding: clamp(0.4rem, 0.7vw, 0.6rem) clamp(0.55rem, 0.9vw, 0.8rem);
+        border: 1px solid {LINE};
         min-width: 0;
       }}
       .metric-card .num {{
         display: block;
-        font-size: clamp(1.1rem, 1.7vw, 1.5rem);
+        font-size: clamp(1rem, 1.5vw, 1.35rem);
         font-weight: 800;
-        color: {page_fg};
+        color: {CHARCOAL};
         letter-spacing: -0.02em;
         line-height: 1.1;
       }}
       .metric-card .lbl {{
         display: block;
-        font-size: clamp(0.6rem, 0.72vw, 0.68rem);
-        color: {muted_color};
+        font-size: clamp(0.58rem, 0.7vw, 0.66rem);
+        color: {MUTED};
         text-transform: uppercase;
         letter-spacing: 0.1em;
-        margin-top: 0.2rem;
+        margin-top: 0.15rem;
       }}
 
-      /* ============== FACTOR LIST ============== */
+      /* ============== FACTOR LIST (why panel) ============== */
       .factor {{
-        font-size: clamp(0.85rem, 1vw, 0.95rem);
-        color: {page_fg};
-        padding: 0.55rem 0;
-        border-bottom: 1px solid {panel_border};
-        line-height: 1.45;
+        font-size: clamp(0.82rem, 0.95vw, 0.9rem);
+        color: {CHARCOAL};
+        padding: 0.4rem 0;
+        border-bottom: 1px solid {LINE};
+        line-height: 1.4;
       }}
       .factor:last-of-type {{ border-bottom: none; }}
-      .factor b {{ color: {accent}; font-weight: 700; }}
-      .mode-danger .factor b {{
-        color: {CHARCOAL};
-        background: {WHITE};
-        padding: 0 0.35rem;
-        border-radius: 4px;
-      }}
+      .factor b {{ color: {TEAL}; font-weight: 700; }}
 
       /* ============== EMPTY STATE ============== */
       .empty-state {{
-        color: {muted_color};
+        color: {MUTED};
         font-size: 0.95rem;
         line-height: 1.55;
         padding: 1.2rem 0.5rem;
         text-align: center;
       }}
-      .empty-state .muted {{
-        color: {muted_color};
-        font-size: 0.82rem;
-        opacity: 0.85;
-      }}
+      .empty-state .muted {{ color: {MUTED}; font-size: 0.82rem; opacity: 0.85; }}
 
       /* ============== PROVENANCE FOOTER ============== */
       .prov {{
-        margin-top: 0.65rem;
-        padding-top: 0.55rem;
-        border-top: 1px dashed {panel_border};
-        font-size: clamp(0.62rem, 0.75vw, 0.7rem);
-        color: {muted_color};
+        margin-top: auto;          /* anchors to panel bottom */
+        padding-top: 0.45rem;
+        border-top: 1px dashed {LINE};
+        font-size: clamp(0.6rem, 0.72vw, 0.68rem);
+        color: {MUTED};
         letter-spacing: 0.04em;
+        flex-shrink: 0;
       }}
 
-      /* ============== ALTAIR / VEGA CHART STYLING ============== */
+      /* ============== ALTAIR / VEGA CHARTS ============== */
       .vega-embed {{ background: transparent !important; width: 100% !important; }}
       .vega-embed canvas, .vega-embed svg {{ max-width: 100% !important; height: auto !important; }}
-      .mode-danger .vega-embed text {{ fill: {WHITE} !important; }}
       .stAltairChart, [data-testid="stAltairChart"] {{
         background: transparent !important;
         width: 100% !important;
       }}
 
       /* ============== TABLET BREAKPOINT (≤ 900px) ============== */
-      /* Force the 2-col panel rows to stack here too */
       @media (max-width: 900px) {{
         [data-testid="stHorizontalBlock"] {{ flex-direction: column !important; }}
         [data-testid="stHorizontalBlock"] > [data-testid="column"],
@@ -335,29 +424,18 @@ def inject_css(mode: str) -> None:
           width: 100% !important;
           flex: 1 1 100% !important;
         }}
-        [data-testid="stVerticalBlockBorderWrapper"] {{
-          margin-bottom: 0.7rem !important;
-        }}
+        [data-testid="stVerticalBlockBorderWrapper"] {{ margin-bottom: 0.7rem !important; }}
       }}
 
       /* ============== MOBILE BREAKPOINT (≤ 600px) ============== */
       @media (max-width: 600px) {{
-        .verdict-numbers {{
-          grid-template-columns: repeat(3, 1fr);
-          gap: 0.5rem;
-        }}
-        .metric-block {{
-          grid-template-columns: repeat(3, 1fr);
-          gap: 0.4rem;
-        }}
+        .verdict-numbers {{ grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }}
+        .metric-block    {{ grid-template-columns: repeat(3, 1fr); gap: 0.4rem; }}
       }}
 
       /* ============== TINY VIEWPORT (≤ 380px) ============== */
       @media (max-width: 380px) {{
-        .verdict-numbers,
-        .metric-block {{
-          grid-template-columns: 1fr 1fr;
-        }}
+        .verdict-numbers, .metric-block {{ grid-template-columns: 1fr 1fr; }}
       }}
 
       /* ============== REDUCED MOTION ============== */
@@ -422,8 +500,6 @@ def decide(filtered: pd.DataFrame, baseline: float) -> dict:
     rate = filtered["is_ksi"].mean()
     delta = (rate - baseline) / baseline * 100 if baseline > 0 else 0
 
-    # Small effects (< 2pt relative) get treated as "in line with baseline"
-    # rather than fake-precise SAFE/DANGER calls.
     if abs(delta) < 2:
         return {
             "mode": "SAFE",
@@ -435,7 +511,6 @@ def decide(filtered: pd.DataFrame, baseline: float) -> dict:
             ),
             "rate": rate, "n": n, "delta_pct": delta,
         }
-
     if delta > 0:
         return {
             "mode": "DANGER",
@@ -447,7 +522,6 @@ def decide(filtered: pd.DataFrame, baseline: float) -> dict:
             ),
             "rate": rate, "n": n, "delta_pct": delta,
         }
-
     return {
         "mode": "SAFE",
         "headline": "Lower than typical risk",
@@ -461,9 +535,9 @@ def decide(filtered: pd.DataFrame, baseline: float) -> dict:
 
 
 # ---------------------------------------------------------------------
-# CHARTS
+# CHARTS — always teal/charcoal palette (page never goes dark)
 # ---------------------------------------------------------------------
-def hour_day_heatmap(df: pd.DataFrame, mode: str) -> alt.Chart:
+def hour_day_heatmap(df: pd.DataFrame) -> alt.Chart:
     day_order = ["Monday", "Tuesday", "Wednesday", "Thursday",
                  "Friday", "Saturday", "Sunday"]
     pivot = (
@@ -474,30 +548,26 @@ def hour_day_heatmap(df: pd.DataFrame, mode: str) -> alt.Chart:
     pivot["ksi_rate"] = pivot["ksi"] / pivot["crashes"]
     pivot.loc[pivot["crashes"] < 5, "ksi_rate"] = np.nan
 
-    is_danger = (mode == "danger")
-    low_color = "#3A3A3A" if is_danger else "#F4F4F4"
-    high_color = WHITE if is_danger else TEAL
-    axis_color = "#9B9B9B" if is_danger else MUTED
-    stroke_color = "#262626" if is_danger else WHITE
-
-    chart = (
+    return (
         alt.Chart(pivot)
-        .mark_rect(stroke=stroke_color, strokeWidth=1)
+        .mark_rect(stroke=WHITE, strokeWidth=1)
         .encode(
-            x=alt.X("hour:O", title="Hour of day",
-                    axis=alt.Axis(labelFontSize=10, titleFontSize=11,
-                                  labelColor=axis_color, titleColor=axis_color,
-                                  domainColor=axis_color, tickColor=axis_color)),
+            x=alt.X("hour:O", title=None,
+                    axis=alt.Axis(labelFontSize=9, titleFontSize=10,
+                                  labelColor=MUTED, titleColor=MUTED,
+                                  domainColor=MUTED, tickColor=MUTED,
+                                  labelOverlap=True)),
             y=alt.Y("Day of Week:N", sort=day_order, title=None,
-                    axis=alt.Axis(labelFontSize=10, labelColor=axis_color,
-                                  domainColor=axis_color, tickColor=axis_color)),
+                    axis=alt.Axis(labelFontSize=9, labelColor=MUTED,
+                                  domainColor=MUTED, tickColor=MUTED)),
             color=alt.Color(
                 "ksi_rate:Q",
-                scale=alt.Scale(range=[low_color, high_color]),
-                legend=alt.Legend(title="Serious-injury rate", format=".0%",
-                                  orient="bottom", titleFontSize=10,
-                                  labelFontSize=9, titleColor=axis_color,
-                                  labelColor=axis_color),
+                scale=alt.Scale(range=["#F4F4F4", TEAL]),
+                legend=alt.Legend(title="KSI rate", format=".0%",
+                                  orient="right", titleFontSize=9,
+                                  labelFontSize=8, titleColor=MUTED,
+                                  labelColor=MUTED, gradientLength=120,
+                                  gradientThickness=8),
             ),
             tooltip=[
                 alt.Tooltip("Day of Week:N", title="Day"),
@@ -506,51 +576,46 @@ def hour_day_heatmap(df: pd.DataFrame, mode: str) -> alt.Chart:
                 alt.Tooltip("ksi_rate:Q", format=".1%", title="KSI rate"),
             ],
         )
-        .properties(height=240, background="transparent")
+        .properties(height=170, background="transparent")
         .configure_view(stroke=None)
         .configure_axis(grid=False)
     )
-    return chart
 
 
-def severity_breakdown_chart(filtered: pd.DataFrame, mode: str) -> alt.Chart:
+def severity_breakdown_chart(filtered: pd.DataFrame) -> alt.Chart:
     sev = (
         filtered["Crash Severity"]
         .value_counts()
         .rename_axis("severity")
         .reset_index(name="count")
     )
-    is_danger = (mode == "danger")
-    accent = WHITE if is_danger else TEAL
-    neutral = "#555" if is_danger else "#D8D8D8"
-    axis_color = "#9B9B9B" if is_danger else MUTED
-
     return (
         alt.Chart(sev)
-        .mark_bar(cornerRadius=3, height=18)
+        .mark_bar(cornerRadius=3, height=14)
         .encode(
             y=alt.Y("severity:N", sort="-x", title=None,
-                    axis=alt.Axis(labelFontSize=10, labelColor=axis_color,
-                                  domainColor=axis_color, tickColor=axis_color)),
+                    axis=alt.Axis(labelFontSize=9, labelColor=MUTED,
+                                  domainColor=MUTED, tickColor=MUTED,
+                                  labelLimit=140)),
             x=alt.X("count:Q", title=None,
-                    axis=alt.Axis(labelFontSize=9, grid=False,
-                                  labelColor=axis_color, domainColor=axis_color,
-                                  tickColor=axis_color)),
+                    axis=alt.Axis(labelFontSize=8, grid=False,
+                                  labelColor=MUTED, domainColor=MUTED,
+                                  tickColor=MUTED)),
             color=alt.condition(
                 alt.FieldOneOfPredicate(field="severity",
                                         oneOf=list(KSI_SEVERITIES)),
-                alt.value(accent),
-                alt.value(neutral),
+                alt.value(TEAL),
+                alt.value("#D8D8D8"),
             ),
             tooltip=[alt.Tooltip("severity:N"), alt.Tooltip("count:Q")],
         )
-        .properties(height=160, background="transparent")
+        .properties(height=110, background="transparent")
         .configure_view(stroke=None)
     )
 
 
 # ---------------------------------------------------------------------
-# UI helpers
+# UI
 # ---------------------------------------------------------------------
 BIKE_SVG = '''
 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
@@ -564,8 +629,6 @@ BIKE_SVG = '''
 
 
 def render_brand():
-    """No mode arg — colors are driven entirely by CSS classes so the
-    verdict-mode CSS re-injection takes effect without inline-style override."""
     st.markdown(
         f'<div class="brand-row">'
         f'<div class="brand-icon">{BIKE_SVG}</div>'
@@ -649,8 +712,9 @@ def explain_drivers(filtered: pd.DataFrame, baseline: float, verdict: dict) -> l
 
 
 # ---------------------------------------------------------------------
-# PANEL RENDERERS  — each renders inside an st.container(border=True)
-# so the children actually nest in the bordered DOM node.
+# PANEL RENDERERS
+# Each renders inside an st.container(border=True) so children nest
+# in the bordered DOM node. Only the verdict panel uses a mode class.
 # ---------------------------------------------------------------------
 def render_verdict_panel(verdict: dict, baseline: float, mode_class: str):
     with st.container(border=True):
@@ -666,8 +730,10 @@ def render_verdict_panel(verdict: dict, baseline: float, mode_class: str):
                 f'<span class="lbl">Matching crashes</span></div>'
                 '</div>'
             )
+        # The mode-X class on .verdict-content is what makes the panel
+        # container flip charcoal in DANGER mode (via :has()).
         st.markdown(
-            f'<div class="mode-{mode_class}">'
+            f'<div class="verdict-content mode-{mode_class}">'
             f'<div class="verdict-mode">{verdict["mode"]}</div>'
             f'<h1 class="verdict-headline">{verdict["headline"]}</h1>'
             f'<p class="verdict-sub">{verdict["subline"]}</p>'
@@ -677,18 +743,18 @@ def render_verdict_panel(verdict: dict, baseline: float, mode_class: str):
         )
 
 
-def render_heatmap_panel(df: pd.DataFrame, mode_class: str):
+def render_heatmap_panel(df: pd.DataFrame):
     with st.container(border=True):
         st.markdown('<div class="sec-h">When crashes turn serious</div>',
                     unsafe_allow_html=True)
-        st.altair_chart(hour_day_heatmap(df, mode_class), use_container_width=True)
+        st.altair_chart(hour_day_heatmap(df), use_container_width=True)
         st.markdown(
             '<div class="prov">Hour × day · KSI rate · cells with &lt; 5 crashes shown blank</div>',
             unsafe_allow_html=True,
         )
 
 
-def render_selection_panel(filtered: pd.DataFrame, mode_class: str):
+def render_selection_panel(filtered: pd.DataFrame):
     with st.container(border=True):
         st.markdown('<div class="sec-h">What\'s in your selection</div>',
                     unsafe_allow_html=True)
@@ -712,7 +778,7 @@ def render_selection_panel(filtered: pd.DataFrame, mode_class: str):
                 f'</div>',
                 unsafe_allow_html=True,
             )
-            st.altair_chart(severity_breakdown_chart(filtered, mode_class),
+            st.altair_chart(severity_breakdown_chart(filtered),
                             use_container_width=True)
         st.markdown(
             '<div class="prov">K + I bars highlighted · all other severities muted</div>',
@@ -720,12 +786,12 @@ def render_selection_panel(filtered: pd.DataFrame, mode_class: str):
         )
 
 
-def render_why_panel(filtered: pd.DataFrame, baseline: float, verdict: dict, mode_class: str):
+def render_why_panel(filtered: pd.DataFrame, baseline: float, verdict: dict):
     with st.container(border=True):
         st.markdown('<div class="sec-h">What\'s driving the call</div>',
                     unsafe_allow_html=True)
         factors_html = "".join(
-            f'<div class="factor mode-{mode_class}">{line}</div>'
+            f'<div class="factor">{line}</div>'
             for line in explain_drivers(filtered, baseline, verdict)
         )
         st.markdown(factors_html, unsafe_allow_html=True)
@@ -743,8 +809,7 @@ def main():
     df = load_data()
     baseline = baseline_ksi_rate(df)
 
-    # Render UI shell first so filters paint before we know the verdict
-    inject_css("safe")
+    inject_css()           # single payload — page is always white/teal
     render_brand()
     filters = render_filters(df)
 
@@ -752,22 +817,19 @@ def main():
     verdict = decide(filtered, baseline)
     mode_class = verdict["mode"].lower()
 
-    # Re-inject CSS now that we know the mode (drives the color flip)
-    inject_css(mode_class)
-
-    # ----- ROW 1: VERDICT + HEATMAP -----
+    # Row 1: verdict + heatmap
     top_left, top_right = st.columns([1, 1.15], gap="medium")
     with top_left:
         render_verdict_panel(verdict, baseline, mode_class)
     with top_right:
-        render_heatmap_panel(df, mode_class)
+        render_heatmap_panel(df)
 
-    # ----- ROW 2: SELECTION + WHY -----
+    # Row 2: selection + why
     bot_left, bot_right = st.columns([1, 1.15], gap="medium")
     with bot_left:
-        render_selection_panel(filtered, mode_class)
+        render_selection_panel(filtered)
     with bot_right:
-        render_why_panel(filtered, baseline, verdict, mode_class)
+        render_why_panel(filtered, baseline, verdict)
 
 
 if __name__ == "__main__":
