@@ -14,12 +14,10 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-# Optional viewport detection — graceful fallback if package not installed
-try:
-    from streamlit_javascript import st_javascript
-    _HAS_JS = True
-except ImportError:
-    _HAS_JS = False
+# Viewport sizing is handled by CSS clamp() in inject_css. We don't try to
+# read window.innerHeight from the browser because the streamlit-javascript
+# component fails to load its iframe assets on Streamlit Cloud often enough
+# to be a problem. Fixed sensible defaults below feed the layout budget.
 
 # ---------- CONFIG ----------
 DATA_PATH = "bike_crash.csv"
@@ -43,24 +41,12 @@ st.set_page_config(
 )
 
 
-# ---------- VIEWPORT DETECTION ----------
+# ---------- VIEWPORT DEFAULTS ----------
 def get_viewport() -> tuple[int, int]:
-    """Read window dimensions on first render, cache in session state.
-    Returns (height_px, width_px). Falls back to (900, 1440) if JS unavailable.
+    """Returns (height_px, width_px) used to size the layout budget.
+    Fixed to a typical 1080p laptop with browser chrome. CSS clamp()
+    inside the rendered components handles smaller / larger screens.
     """
-    if "viewport_h" in st.session_state and "viewport_w" in st.session_state:
-        return st.session_state.viewport_h, st.session_state.viewport_w
-    if _HAS_JS:
-        try:
-            h = st_javascript("window.innerHeight", key="vp_h")
-            w = st_javascript("window.innerWidth", key="vp_w")
-            if h and w and h > 100 and w > 100:
-                st.session_state.viewport_h = int(h)
-                st.session_state.viewport_w = int(w)
-                return int(h), int(w)
-        except Exception:
-            pass
-    # Fallback: assume typical 1080p laptop with browser chrome
     return 880, 1440
 
 
@@ -938,7 +924,7 @@ def render_decision_band(slice_df: pd.DataFrame, all_df: pd.DataFrame) -> None:
             st.markdown('<div class="acs-tile-title">Risk gauge</div>',
                         unsafe_allow_html=True)
             gauge_fig, score, gauge_color = gauge_chart(v)
-            st.plotly_chart(gauge_fig, use_container_width=True,
+            st.plotly_chart(gauge_fig, width="stretch",
                             config={"displayModeBar": False, "responsive": True},
                             key="decision_gauge")
             # Render score as a separate styled element — guaranteed to fit
@@ -1005,14 +991,14 @@ def render_pattern_band(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: str
                     # fig is the structurally-identical empty_fig, Streamlit
                     # doesn't collapse them into one and throw
                     # StreamlitDuplicateElementId.
-                    st.plotly_chart(fn(), use_container_width=True,
+                    st.plotly_chart(fn(), width="stretch",
                                     config={"displayModeBar": False, "responsive": True},
                                     key=f"pattern_tile_{title}")
     with right:
         with st.container(border=True, height=PATTERN_H):
             st.markdown('<div class="acs-section">When risk peaks across the day</div>',
                         unsafe_allow_html=True)
-            st.plotly_chart(hour_curve(slice_df, all_df, color), use_container_width=True,
+            st.plotly_chart(hour_curve(slice_df, all_df, color), width="stretch",
                             config={"displayModeBar": False, "responsive": True},
                             key="pattern_hour_curve")
             st.markdown(
@@ -1033,21 +1019,21 @@ def render_drivers_strip(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: st
         with st.container(border=True, height=DRIVERS_H):
             st.markdown('<div class="acs-tile-title">Severity mix</div>',
                         unsafe_allow_html=True)
-            st.plotly_chart(severity_bar(slice_df, color), use_container_width=True,
+            st.plotly_chart(severity_bar(slice_df, color), width="stretch",
                             config={"displayModeBar": False, "responsive": True},
                             key="drivers_severity")
     with cols[1]:
         with st.container(border=True, height=DRIVERS_H):
             st.markdown('<div class="acs-tile-title">Day × hour heatmap</div>',
                         unsafe_allow_html=True)
-            st.plotly_chart(heatmap(slice_df, color), use_container_width=True,
+            st.plotly_chart(heatmap(slice_df, color), width="stretch",
                             config={"displayModeBar": False, "responsive": True},
                             key="drivers_heatmap")
     with cols[2]:
         with st.container(border=True, height=DRIVERS_H):
             st.markdown('<div class="acs-tile-title">Roadway breakdown</div>',
                         unsafe_allow_html=True)
-            st.plotly_chart(rd_fig, use_container_width=True,
+            st.plotly_chart(rd_fig, width="stretch",
                             config={"displayModeBar": False, "responsive": True},
                             key="drivers_roadway")
             st.markdown(f'<div class="acs-caption">{rd_cap}</div>',
@@ -1058,14 +1044,14 @@ def render_drivers_strip(slice_df: pd.DataFrame, all_df: pd.DataFrame, color: st
                         unsafe_allow_html=True)
             d1, d2 = st.columns(2)
             with d1:
-                st.plotly_chart(don_helm, use_container_width=True,
+                st.plotly_chart(don_helm, width="stretch",
                                 config={"displayModeBar": False, "responsive": True},
                                 key="drivers_donut_helmet")
                 st.markdown(
                     '<div class="acs-caption" style="text-align:center;">Helmet not worn</div>',
                     unsafe_allow_html=True)
             with d2:
-                st.plotly_chart(don_traf, use_container_width=True,
+                st.plotly_chart(don_traf, width="stretch",
                                 config={"displayModeBar": False, "responsive": True},
                                 key="drivers_donut_traffic")
                 st.markdown(
