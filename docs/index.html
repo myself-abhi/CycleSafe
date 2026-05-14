@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Austin CycleSafe — Go / No-Go Decision Tool for Cyclists</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!-- Open Graph / LinkedIn / Twitter / Slack / iMessage preview metadata.
+       Every modern platform reads these tags. The image URL must be
+       absolute (full https://… path), not relative. -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Austin CycleSafe">
+  <meta property="og:title" content="Austin CycleSafe — Go / No-Go Decision Tool for Cyclists">
+  <meta property="og:description" content="An interactive decision tool built on 2,463 City of Austin bike-crash records (2010–2017). Filter conditions for your ride and get a verdict against the citywide baseline. Built for ALY 6040 at Northeastern University.">
+  <meta property="og:image" content="https://myself-abhi.github.io/CycleSafe/preview.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:url" content="https://myself-abhi.github.io/CycleSafe/">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Austin CycleSafe — Go / No-Go Decision Tool">
+  <meta name="twitter:description" content="An interactive decision tool built on 2,463 City of Austin bike-crash records.">
+  <meta name="twitter:image" content="https://myself-abhi.github.io/CycleSafe/preview.png">
+
+  <meta name="description" content="An interactive decision tool built on 2,463 City of Austin bike-crash records (2010–2017).">
+
+  <style>
+    :root {
+      --ink: #0A0A0A;
+      --body: #374151;
+      --muted: #6B7280;
+      --border: #E5E7EB;
+      --green: #16A34A;
+      --bg: #FAFAFA;
+      --card: #FFFFFF;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; }
+    body {
+      font-family: -apple-system, "Segoe UI", Inter, Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--body);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      max-width: 720px;
+      width: 100%;
+      padding: clamp(24px, 4vw, 40px);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.04);
+    }
+    .badge {
+      display: inline-block;
+      background: var(--green);
+      color: white;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 4px 10px;
+      border-radius: 6px;
+      margin-bottom: 14px;
+    }
+    h1 {
+      font-size: clamp(22px, 3vw, 32px);
+      color: var(--ink);
+      margin: 0 0 10px 0;
+      font-weight: 700;
+      letter-spacing: -0.015em;
+      line-height: 1.2;
+    }
+    .sub {
+      font-size: clamp(14px, 1.5vw, 16px);
+      color: var(--body);
+      line-height: 1.55;
+      margin: 0 0 20px 0;
+    }
+    .preview {
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      margin: 0 0 20px 0;
+      display: block;
+    }
+    .cta {
+      display: inline-block;
+      background: var(--ink);
+      color: white;
+      font-weight: 600;
+      font-size: 14px;
+      padding: 12px 22px;
+      border-radius: 8px;
+      text-decoration: none;
+      letter-spacing: 0.01em;
+    }
+    .cta:hover { opacity: 0.9; }
+    .meta {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 18px;
+      letter-spacing: 0.02em;
+    }
+    .meta a { color: var(--muted); text-decoration: underline; }
+    .countdown { color: var(--green); font-weight: 600; }
+  </style>
+
+  <!-- Auto-redirect to the Streamlit app after 1.2 seconds. Visitors who
+       want the preview card see it briefly; bots and social-media scrapers
+       don't execute this script so they read the meta tags above instead. -->
+  <script>
+    setTimeout(function () {
+      window.location.replace("https://cyclesafe.streamlit.app");
+    }, 1200);
+  </script>
+</head>
+<body>
+  <div class="card">
+    <div class="badge">Live Project</div>
+    <h1>Austin CycleSafe</h1>
+    <p class="sub">
+      A go/no-go decision tool for Austin cyclists, built on 2,463 City of Austin
+      bike-crash records (2010–2017). Filter the conditions for your ride and get
+      a verdict against the citywide baseline.
+    </p>
+    <img src="preview.png" alt="Screenshot of the Austin CycleSafe dashboard" class="preview">
+    <a class="cta" href="https://cyclesafe.streamlit.app">Open the live app →</a>
+    <div class="meta">
+      Built for ALY 6040 at Northeastern University ·
+      <a href="https://github.com/myself-abhi/CycleSafe">Source on GitHub</a> ·
+      Redirecting in <span class="countdown">1 second</span>…
+    </div>
+  </div>
+</body>
+</html>
